@@ -73,7 +73,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             </div>
             <div>
                 <label class="block text-sm font-medium text-gray-700">Lokasi Acara</label>
-                <input type="text" name="lokasi" value="<?= htmlspecialchars($client['lokasi'] ?? '') ?>" required class="mt-1 w-full px-3 py-2 border rounded-md focus:border-blue-500 focus:outline-none">
+                <textarea name="lokasi" required class="mt-1 w-full px-3 py-2 border rounded-md focus:border-blue-500 focus:outline-none" rows="2"><?= htmlspecialchars($client['lokasi'] ?? '') ?></textarea>
             </div>
             <div>
                 <label class="block text-sm font-medium text-gray-700">Link Galeri (Tujuan QR)</label>

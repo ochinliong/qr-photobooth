@@ -101,7 +101,7 @@ $clients = $pdo->query("SELECT * FROM clients ORDER BY created_at DESC")->fetchA
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700">Lokasi Acara</label>
-                    <input type="text" name="lokasi" placeholder="Misal: Gedung Graha..." required class="mt-1 w-full px-3 py-2 border rounded-md">
+                    <textarea name="lokasi" placeholder="Baris 1: Nama Gedung&#10;Baris 2: Nama Kota" required class="mt-1 w-full px-3 py-2 border rounded-md" rows="2"></textarea>
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700">Link Galeri (Tujuan QR)</label>
@@ -143,7 +143,7 @@ $clients = $pdo->query("SELECT * FROM clients ORDER BY created_at DESC")->fetchA
                         <?php foreach($clients as $c): ?>
                         <tr>
                             <td class="px-6 py-4 whitespace-nowrap"><?= htmlspecialchars($c['nama_client']) ?></td>
-                            <td class="px-6 py-4 whitespace-nowrap"><?= htmlspecialchars($c['lokasi'] ?? '-') ?></td>
+                            <td class="px-6 py-4 whitespace-pre-wrap text-sm leading-snug"><?= htmlspecialchars($c['lokasi'] ?? '-') ?></td>
                             <td class="px-6 py-4 whitespace-nowrap"><?= $c['tanggal_event'] ?> <br> <?= $c['jam_mulai'] ?> - <?= $c['jam_selesai'] ?></td>
                             <td class="px-6 py-4 whitespace-nowrap"><code class="bg-gray-100 p-1 rounded"><?= $c['folder_foto_path'] ?></code></td>
                             <td class="px-6 py-4 whitespace-nowrap">
