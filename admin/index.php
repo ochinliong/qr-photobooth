@@ -28,14 +28,30 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
     $qr_filepath = '../uploads/qrcodes/' . $qr_filename;
     
     // Fetch and save QR image using cURL
-    $ch = curl_init($qr_api);
-    $fp = fopen($qr_filepath, 'wb');
-    curl_setopt($ch, CURLOPT_FILE, $fp);
-    curl_setopt($ch, CURLOPT_HEADER, 0);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    curl_exec($ch);
-    curl_close($ch);
-    fclose($fp);
+    if (function_exists('curl_init')) {
+        $ch = curl_init($qr_api);
+        $fp = @fopen($qr_filepath, 'wb');
+        if ($fp) {
+            curl_setopt($ch, CURLOPT_FILE, $fp);
+            curl_setopt($ch, CURLOPT_HEADER, 0);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            curl_exec($ch);
+            curl_close($ch);
+            fclose($fp);
+        } else {
+            // Fallback if fopen fails due to permissions
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            $img = curl_exec($ch);
+            @file_put_contents($qr_filepath, $img);
+            curl_close($ch);
+        }
+    } else {
+        $qr_content = @file_get_contents($qr_api);
+        if ($qr_content !== false) {
+            @file_put_contents($qr_filepath, $qr_content);
+        }
+    }
 
     $stmt = $pdo->prepare("INSERT INTO clients (nama_client, slug, tanggal_event, jam_mulai, jam_selesai, qr_code_path, folder_foto_path) VALUES (?, ?, ?, ?, ?, ?, ?)");
     $stmt->execute([$nama_client, $slug, $tanggal_event, $jam_mulai, $jam_selesai, 'uploads/qrcodes/'.$qr_filename, $link_galeri]);
