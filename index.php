@@ -27,12 +27,15 @@ foreach ($all_clients as $client) {
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Portal Photobooth</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
-        body { font-family: 'Inter', sans-serif; }
+        body { 
+            font-family: 'Inter', sans-serif; 
+            touch-action: pan-y; /* Hanya izinkan scroll atas-bawah */
+        }
     </style>
 </head>
 <body class="bg-gray-50 flex flex-col min-h-screen">
