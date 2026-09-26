@@ -8,16 +8,12 @@ if (!isset($_SESSION['admin_id'])) {
 // Handle Add Client
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['action'] == 'add') {
     $nama_client = $_POST['nama_client'];
-    $slug = strtolower(trim(preg_replace('/[^A-Za-z0-9-]+/', '-', $nama_client)));
+    // Slug digunakan untuk nama unik file QR
+    $slug = strtolower(trim(preg_replace('/[^A-Za-z0-9-]+/', '-', $nama_client))) . '-' . time();
     $tanggal_event = $_POST['tanggal_event'];
     $jam_mulai = $_POST['jam_mulai'];
     $jam_selesai = $_POST['jam_selesai'];
-    
-    // Create folder for client photos
-    $folder_path = '../uploads/' . $slug;
-    if (!file_exists($folder_path)) {
-        mkdir($folder_path, 0777, true);
-    }
+    $link_galeri = $_POST['folder_foto_path'];
     
     // Create folder for QR Codes if not exists
     $qr_folder_path = '../uploads/qrcodes';
@@ -25,13 +21,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
         mkdir($qr_folder_path, 0777, true);
     }
 
-    // Generate QR Code via API
-    $qr_data = $base_url . '/client/?c=' . $slug;
+    // Generate QR Code via API, pointing to EXTERNAL URL
+    $qr_data = $link_galeri;
     $qr_api = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' . urlencode($qr_data);
     $qr_filename = $slug . '.png';
     $qr_filepath = '../uploads/qrcodes/' . $qr_filename;
     
-    // Fetch and save QR image using cURL to avoid file_get_contents disabled issue
+    // Fetch and save QR image using cURL
     $ch = curl_init($qr_api);
     $fp = fopen($qr_filepath, 'wb');
     curl_setopt($ch, CURLOPT_FILE, $fp);
@@ -42,7 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
     fclose($fp);
 
     $stmt = $pdo->prepare("INSERT INTO clients (nama_client, slug, tanggal_event, jam_mulai, jam_selesai, qr_code_path, folder_foto_path) VALUES (?, ?, ?, ?, ?, ?, ?)");
-    $stmt->execute([$nama_client, $slug, $tanggal_event, $jam_mulai, $jam_selesai, 'uploads/qrcodes/'.$qr_filename, 'uploads/'.$slug]);
+    $stmt->execute([$nama_client, $slug, $tanggal_event, $jam_mulai, $jam_selesai, 'uploads/qrcodes/'.$qr_filename, $link_galeri]);
     header("Location: index.php");
     exit;
 }
@@ -85,6 +81,10 @@ $clients = $pdo->query("SELECT * FROM clients ORDER BY created_at DESC")->fetchA
                 <div>
                     <label class="block text-sm font-medium text-gray-700">Nama Klien</label>
                     <input type="text" name="nama_client" required class="mt-1 w-full px-3 py-2 border rounded-md">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Link Galeri (Tujuan QR)</label>
+                    <input type="url" name="folder_foto_path" placeholder="https://qr.yuhu.co.id/client/Nama..." required class="mt-1 w-full px-3 py-2 border rounded-md">
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700">Tanggal Event</label>

@@ -49,7 +49,7 @@ foreach ($all_clients as $client) {
             <div class="space-y-4">
                 <?php if (count($active_clients) > 0): ?>
                     <?php foreach($active_clients as $c): ?>
-                        <a href="client/?c=<?= $c['slug'] ?>" class="block group relative p-4 bg-gray-50 border border-gray-100 rounded-xl hover:bg-blue-50 hover:border-blue-200 transition-all duration-300">
+                        <a href="<?= htmlspecialchars($c['folder_foto_path']) ?>" target="_blank" class="block group relative p-4 bg-gray-50 border border-gray-100 rounded-xl hover:bg-blue-50 hover:border-blue-200 transition-all duration-300">
                             <div class="flex justify-between items-center">
                                 <div>
                                     <h3 class="font-bold text-gray-900 group-hover:text-blue-700 text-lg"><?= htmlspecialchars($c['nama_client']) ?></h3>
