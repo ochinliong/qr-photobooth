@@ -48,9 +48,18 @@ foreach ($all_clients as $client) {
             <div class="w-full max-w-md mx-auto bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
                 <p class="text-slate-800 font-bold text-[15px] mb-3">Terima kasih telah mengabadikan momen bersama kami! ✨</p>
                 <div class="w-12 h-1 bg-slate-200 mx-auto rounded-full mb-4"></div>
-                <p class="text-slate-500 text-sm leading-relaxed">
+                <p class="text-slate-500 text-sm leading-relaxed mb-4">
                     Silahkan cari nama acara yang Anda hadiri pada daftar di bawah ini, lalu klik tombol tersebut untuk melihat dan mengunduh hasil foto Anda.
                 </p>
+                <!-- Warning Notice -->
+                <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-left">
+                    <div class="flex items-start">
+                        <svg class="w-5 h-5 text-amber-500 mt-0.5 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                        <p class="text-xs text-amber-700 leading-relaxed">
+                            <strong>Penting:</strong> Jangan menyimpan (bookmark) halaman ini karena acara Anda akan otomatis hilang setelah selesai. Gunakan fitur <strong>Copy Link</strong> di bawah untuk menyimpan link galeri permanen Anda.
+                        </p>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -98,6 +107,12 @@ foreach ($all_clients as $client) {
                                         </div>
                                     </div>
                                 </div>
+                                
+                                <!-- Copy Link Button -->
+                                <button onclick="event.preventDefault(); copyToClipboard('<?= htmlspecialchars($c['folder_foto_path']) ?>', this);" class="mt-4 flex items-center justify-center w-full bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-2.5 rounded-lg transition-colors border border-slate-200">
+                                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg>
+                                    <span>Copy Link Galeri</span>
+                                </button>
                             </div>
                         </a>
                     <?php endforeach; ?>
@@ -131,6 +146,27 @@ foreach ($all_clients as $client) {
     </footer>
 
     <script>
+        // Fitur Copy Link
+        function copyToClipboard(text, btn) {
+            navigator.clipboard.writeText(text).then(() => {
+                const span = btn.querySelector('span');
+                const originalText = span.innerText;
+                span.innerText = 'Tersalin!';
+                btn.classList.replace('bg-slate-100', 'bg-green-100');
+                btn.classList.replace('text-slate-700', 'text-green-700');
+                btn.classList.replace('border-slate-200', 'border-green-200');
+                
+                setTimeout(() => {
+                    span.innerText = originalText;
+                    btn.classList.replace('bg-green-100', 'bg-slate-100');
+                    btn.classList.replace('text-green-700', 'text-slate-700');
+                    btn.classList.replace('border-green-200', 'border-slate-200');
+                }, 2000);
+            }).catch(err => {
+                alert('Gagal menyalin link: ' + err);
+            });
+        }
+
         // Fitur Auto-Refresh "Tanpa Kedip" (AJAX)
         // Mengecek ke server setiap 30 detik apakah ada perubahan data
         setInterval(() => {
