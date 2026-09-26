@@ -41,21 +41,32 @@ foreach ($all_clients as $client) {
 <body class="bg-gray-50 flex flex-col min-h-screen">
     <div class="flex-grow flex flex-col items-center justify-center p-4">
         <!-- Logo Brand -->
-        <div class="mb-10 flex flex-col items-center justify-center text-center w-full px-4">
+        <div class="mb-8 flex flex-col items-center justify-center text-center w-full px-4">
             <img src="https://qr.yuhu.co.id/client/logo.png" alt="Yuhu Logo" class="h-16 md:h-20 w-auto mb-6 drop-shadow-sm transition-transform duration-300 hover:scale-105">
-            <h2 class="text-2xl font-extrabold text-gray-800 mb-5 tracking-tight">Akses Galeri Foto</h2>
             
-            <div class="w-full max-w-sm mx-auto bg-white rounded-2xl p-5 shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] border border-gray-100">
-                <p class="text-slate-700 font-semibold text-[15px] mb-3">Terima kasih telah mengabadikan momen bersama kami! ✨</p>
-                <div class="w-12 h-1 bg-slate-200 mx-auto rounded-full mb-3"></div>
+            <!-- Card Sambutan -->
+            <div class="w-full max-w-md mx-auto bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                <p class="text-slate-800 font-bold text-[15px] mb-3">Terima kasih telah mengabadikan momen bersama kami! ✨</p>
+                <div class="w-12 h-1 bg-slate-200 mx-auto rounded-full mb-4"></div>
                 <p class="text-slate-500 text-sm leading-relaxed">
                     Silahkan cari nama acara yang Anda hadiri pada daftar di bawah ini, lalu klik tombol tersebut untuk melihat dan mengunduh hasil foto Anda.
                 </p>
             </div>
         </div>
 
-        <div class="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden p-6">
-            <h2 class="text-xl font-semibold text-gray-800 mb-6 text-center">Live Events</h2>
+        <!-- Card Live Events -->
+        <div class="w-full max-w-md bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden p-6 relative">
+            <!-- Aksen Garis Atas -->
+            <div class="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-blue-600 via-indigo-500 to-purple-500"></div>
+            
+            <div class="flex items-center justify-center gap-2.5 mb-6">
+                <!-- Indikator Merah Berkedip -->
+                <span class="relative flex h-3.5 w-3.5">
+                  <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                  <span class="relative inline-flex rounded-full h-3.5 w-3.5 bg-red-500"></span>
+                </span>
+                <h2 class="text-xl font-extrabold text-gray-900 tracking-wider uppercase">Live Events</h2>
+            </div>
             
             <div id="event-list" class="space-y-4">
                 <?php if (count($active_clients) > 0): ?>
