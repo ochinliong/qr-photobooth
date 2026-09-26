@@ -38,9 +38,9 @@ foreach ($all_clients as $client) {
 <body class="bg-gray-50 flex flex-col min-h-screen">
     <div class="flex-grow flex flex-col items-center justify-center p-4">
         <!-- Logo Brand -->
-        <div class="mb-10 text-center">
-            <h1 class="text-4xl font-extrabold text-gray-900 tracking-tight">YUHU<span class="text-blue-600">.</span></h1>
-            <p class="text-gray-500 mt-2">Photobooth Portal</p>
+        <div class="mb-10 flex flex-col items-center justify-center text-center">
+            <img src="https://qr.yuhu.co.id/client/logo.png" alt="Yuhu Logo" class="h-16 md:h-20 w-auto mb-3 drop-shadow-sm transition-transform duration-300 hover:scale-105">
+            <p class="text-gray-500 font-medium tracking-wide">Photobooth Portal</p>
         </div>
 
         <div class="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden p-6">
