@@ -79,14 +79,14 @@ foreach ($all_clients as $client) {
 
         <!-- Action Buttons -->
         <div class="w-full max-w-md mt-8 space-y-3">
-            <a href="https://wa.me/6285603202222" target="_blank" class="flex items-center justify-center w-full bg-blue-600 text-white font-semibold py-3 rounded-xl shadow-md hover:bg-blue-700 transition-all">
+            <a href="https://wa.me/6285603202222" target="_blank" class="flex items-center justify-center w-full bg-slate-800 text-white font-semibold py-3 rounded-xl shadow-md hover:bg-slate-900 transition-all">
                 Pricelist & Booking
             </a>
             <div class="flex gap-3">
-                <a href="https://wa.me/6285603202222" target="_blank" class="flex-1 flex items-center justify-center bg-green-500 text-white font-semibold py-3 rounded-xl shadow-md hover:bg-green-600 transition-all">
+                <a href="https://wa.me/6285603202222" target="_blank" class="flex-1 flex items-center justify-center bg-slate-800 text-white font-semibold py-3 rounded-xl shadow-md hover:bg-slate-900 transition-all">
                     WhatsApp
                 </a>
-                <a href="https://www.instagram.com/yuhuphotobooth" target="_blank" class="flex-1 flex items-center justify-center bg-gradient-to-r from-purple-500 to-pink-500 text-white font-semibold py-3 rounded-xl shadow-md hover:opacity-90 transition-all">
+                <a href="https://www.instagram.com/yuhuphotobooth" target="_blank" class="flex-1 flex items-center justify-center bg-slate-800 text-white font-semibold py-3 rounded-xl shadow-md hover:bg-slate-900 transition-all">
                     Instagram
                 </a>
             </div>
