@@ -160,14 +160,21 @@ foreach ($all_clients as $client) {
         window.addEventListener('blur', function() {
             if (!sessionStorage.getItem('blur_warning_shown')) {
                 Swal.fire({
-                    icon: 'warning',
-                    title: 'Perhatian!',
-                    text: 'Tolong JANGAN membagikan atau menyimpan link dari atas browser (files.yuhu.co.id). Halaman ini bersifat sementara. Gunakan tombol "Copy Link" pada acara Anda di bawah.',
-                    confirmButtonText: 'Saya Mengerti',
-                    confirmButtonColor: '#2563eb',
+                    title: 'Mohon Perhatian ⚠️',
+                    html: `
+                        <div class="text-slate-600 text-sm leading-relaxed mt-1 text-center">
+                            <p class="mb-3">Link halaman portal ini <strong>(files.yuhu.co.id)</strong> bersifat sementara dan otomatis hilang setelah acara selesai.</p>
+                            <p>Untuk membagikan atau menyimpan galeri Anda, mohon gunakan tombol <br><span class="inline-block bg-slate-100 text-slate-700 font-bold px-3 py-1.5 rounded-lg text-xs border border-slate-200 mt-2 shadow-sm">Copy Link</span><br> yang tersedia pada daftar acara Anda di bawah.</p>
+                        </div>
+                    `,
+                    icon: 'info',
+                    iconColor: '#3b82f6',
+                    confirmButtonText: 'Siap, Mengerti!',
+                    buttonsStyling: false,
                     customClass: {
-                        title: 'text-xl font-bold',
-                        popup: 'rounded-2xl'
+                        popup: 'rounded-[1.5rem] shadow-2xl border border-gray-100 p-4',
+                        title: 'text-xl font-extrabold text-slate-800',
+                        confirmButton: 'bg-slate-800 text-white rounded-xl font-bold px-8 py-3.5 mt-2 hover:bg-slate-700 transition-colors w-full shadow-md'
                     }
                 });
                 sessionStorage.setItem('blur_warning_shown', 'true');
