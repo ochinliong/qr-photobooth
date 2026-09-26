@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS clients (
     id INT AUTO_INCREMENT PRIMARY KEY,
     nama_client VARCHAR(255) NOT NULL,
     slug VARCHAR(255) NOT NULL UNIQUE,
+    lokasi VARCHAR(255) NOT NULL,
     tanggal_event DATE NOT NULL,
     jam_mulai TIME NOT NULL,
     jam_selesai TIME NOT NULL,

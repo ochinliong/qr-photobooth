@@ -8,6 +8,7 @@ if (!isset($_SESSION['admin_id'])) {
 // Handle Add Client
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['action'] == 'add') {
     $nama_client = $_POST['nama_client'];
+    $lokasi = $_POST['lokasi'];
     // Slug digunakan untuk nama unik file QR
     $slug = strtolower(trim(preg_replace('/[^A-Za-z0-9-]+/', '-', $nama_client))) . '-' . time();
     $tanggal_event = $_POST['tanggal_event'];
@@ -53,8 +54,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
         }
     }
 
-    $stmt = $pdo->prepare("INSERT INTO clients (nama_client, slug, tanggal_event, jam_mulai, jam_selesai, qr_code_path, folder_foto_path) VALUES (?, ?, ?, ?, ?, ?, ?)");
-    $stmt->execute([$nama_client, $slug, $tanggal_event, $jam_mulai, $jam_selesai, 'uploads/qrcodes/'.$qr_filename, $link_galeri]);
+    $stmt = $pdo->prepare("INSERT INTO clients (nama_client, slug, lokasi, tanggal_event, jam_mulai, jam_selesai, qr_code_path, folder_foto_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+    $stmt->execute([$nama_client, $slug, $lokasi, $tanggal_event, $jam_mulai, $jam_selesai, 'uploads/qrcodes/'.$qr_filename, $link_galeri]);
     header("Location: index.php");
     exit;
 }
@@ -99,6 +100,10 @@ $clients = $pdo->query("SELECT * FROM clients ORDER BY created_at DESC")->fetchA
                     <input type="text" name="nama_client" required class="mt-1 w-full px-3 py-2 border rounded-md">
                 </div>
                 <div>
+                    <label class="block text-sm font-medium text-gray-700">Lokasi Acara</label>
+                    <input type="text" name="lokasi" placeholder="Misal: Gedung Graha..." required class="mt-1 w-full px-3 py-2 border rounded-md">
+                </div>
+                <div>
                     <label class="block text-sm font-medium text-gray-700">Link Galeri (Tujuan QR)</label>
                     <input type="url" name="folder_foto_path" placeholder="https://qr.yuhu.co.id/client/Nama..." required class="mt-1 w-full px-3 py-2 border rounded-md">
                 </div>
@@ -127,6 +132,7 @@ $clients = $pdo->query("SELECT * FROM clients ORDER BY created_at DESC")->fetchA
                     <thead>
                         <tr>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Nama</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Lokasi</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Jadwal</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Folder Foto</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">QR Code</th>
@@ -137,6 +143,7 @@ $clients = $pdo->query("SELECT * FROM clients ORDER BY created_at DESC")->fetchA
                         <?php foreach($clients as $c): ?>
                         <tr>
                             <td class="px-6 py-4 whitespace-nowrap"><?= htmlspecialchars($c['nama_client']) ?></td>
+                            <td class="px-6 py-4 whitespace-nowrap"><?= htmlspecialchars($c['lokasi'] ?? '-') ?></td>
                             <td class="px-6 py-4 whitespace-nowrap"><?= $c['tanggal_event'] ?> <br> <?= $c['jam_mulai'] ?> - <?= $c['jam_selesai'] ?></td>
                             <td class="px-6 py-4 whitespace-nowrap"><code class="bg-gray-100 p-1 rounded"><?= $c['folder_foto_path'] ?></code></td>
                             <td class="px-6 py-4 whitespace-nowrap">

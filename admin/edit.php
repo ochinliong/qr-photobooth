@@ -22,6 +22,7 @@ if (!$client) {
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $nama_client = $_POST['nama_client'];
+    $lokasi = $_POST['lokasi'];
     $link_galeri = $_POST['folder_foto_path'];
     $tanggal_event = $_POST['tanggal_event'];
     $jam_mulai = $_POST['jam_mulai'];
@@ -47,8 +48,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         }
     }
 
-    $stmt = $pdo->prepare("UPDATE clients SET nama_client = ?, folder_foto_path = ?, tanggal_event = ?, jam_mulai = ?, jam_selesai = ? WHERE id = ?");
-    $stmt->execute([$nama_client, $link_galeri, $tanggal_event, $jam_mulai, $jam_selesai, $id]);
+    $stmt = $pdo->prepare("UPDATE clients SET nama_client = ?, lokasi = ?, folder_foto_path = ?, tanggal_event = ?, jam_mulai = ?, jam_selesai = ? WHERE id = ?");
+    $stmt->execute([$nama_client, $lokasi, $link_galeri, $tanggal_event, $jam_mulai, $jam_selesai, $id]);
     
     header("Location: index.php");
     exit;
@@ -69,6 +70,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             <div>
                 <label class="block text-sm font-medium text-gray-700">Nama Klien</label>
                 <input type="text" name="nama_client" value="<?= htmlspecialchars($client['nama_client']) ?>" required class="mt-1 w-full px-3 py-2 border rounded-md focus:border-blue-500 focus:outline-none">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Lokasi Acara</label>
+                <input type="text" name="lokasi" value="<?= htmlspecialchars($client['lokasi'] ?? '') ?>" required class="mt-1 w-full px-3 py-2 border rounded-md focus:border-blue-500 focus:outline-none">
             </div>
             <div>
                 <label class="block text-sm font-medium text-gray-700">Link Galeri (Tujuan QR)</label>
