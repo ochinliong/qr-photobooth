@@ -143,6 +143,7 @@ $clients = $pdo->query("SELECT * FROM clients ORDER BY created_at DESC")->fetchA
                                 <a href="<?= '../' . $c['qr_code_path'] ?>" target="_blank" class="text-blue-600 hover:underline">Lihat QR</a>
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap">
+                                <a href="edit.php?id=<?= $c['id'] ?>" class="text-indigo-600 hover:underline mr-3">Edit</a>
                                 <a href="?delete=<?= $c['id'] ?>" onclick="return confirm('Yakin ingin menghapus?')" class="text-red-600 hover:underline">Hapus</a>
                             </td>
                         </tr>
