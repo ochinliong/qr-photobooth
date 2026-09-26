@@ -162,21 +162,23 @@ foreach ($all_clients as $client) {
         window.addEventListener('blur', function() {
             if (!sessionStorage.getItem('blur_warning_shown')) {
                 Swal.fire({
-                    title: 'Mohon Perhatian ⚠️',
+                    title: 'Live Events - YUHU Photobooth',
                     html: `
                         <div class="text-slate-600 text-sm leading-relaxed mt-1 text-center">
                             <p class="mb-3">Link halaman portal ini <strong>(files.yuhu.co.id)</strong> bersifat sementara dan otomatis hilang setelah acara selesai.</p>
                             <p>Untuk membagikan atau menyimpan galeri Anda, mohon gunakan tombol <br><span class="inline-block bg-slate-100 text-slate-700 font-bold px-3 py-1.5 rounded-lg text-xs border border-slate-200 mt-2 shadow-sm">Copy Link</span><br> yang tersedia pada daftar acara Anda di bawah.</p>
                         </div>
                     `,
-                    icon: 'info',
-                    iconColor: '#3b82f6',
+                    imageUrl: 'https://qr.yuhu.co.id/2025/icon.png',
+                    imageWidth: 64,
+                    imageAlt: 'Yuhu Icon',
                     confirmButtonText: 'Siap, Mengerti!',
                     buttonsStyling: false,
                     customClass: {
                         popup: 'rounded-[1.5rem] shadow-2xl border border-gray-100 p-4',
-                        title: 'text-xl font-extrabold text-slate-800',
-                        confirmButton: 'bg-slate-800 text-white rounded-xl font-bold px-8 py-3.5 mt-2 hover:bg-slate-700 transition-colors w-full shadow-md'
+                        title: 'text-xl font-extrabold text-slate-800 mt-2',
+                        image: 'mb-0 mx-auto drop-shadow-sm',
+                        confirmButton: 'bg-slate-800 text-white rounded-xl font-bold px-8 py-3.5 mt-3 hover:bg-slate-700 transition-colors w-full shadow-md'
                     }
                 });
                 sessionStorage.setItem('blur_warning_shown', 'true');
