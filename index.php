@@ -80,17 +80,18 @@ foreach ($all_clients as $client) {
             <div id="event-list" class="space-y-4">
                 <?php if (count($active_clients) > 0): ?>
                     <?php foreach($active_clients as $c): ?>
-                        <a href="<?= htmlspecialchars($c['folder_foto_path']) ?>" target="_blank" class="block group relative p-4 bg-gray-50 border border-gray-100 rounded-xl hover:bg-blue-50 hover:border-blue-200 transition-all duration-300">
+                        <div class="block relative p-5 bg-gray-50 border border-gray-100 rounded-xl hover:bg-blue-50/50 transition-all duration-300 shadow-sm">
                             <div class="flex flex-col flex-grow">
                                 <div class="flex justify-between items-start mb-1">
-                                    <h3 class="font-bold text-gray-900 group-hover:text-blue-700 text-lg"><?= htmlspecialchars($c['nama_client']) ?></h3>
-                                    <div class="text-blue-500 mt-1">
-                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                                    <h3 class="font-bold text-gray-900 text-lg leading-tight"><?= htmlspecialchars($c['nama_client']) ?></h3>
+                                    <div class="text-blue-500 mt-0.5">
+                                        <!-- Ikon Kamera -->
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
                                     </div>
                                 </div>
                                 
                                 <!-- Meta Info: Lokasi & Tanggal -->
-                                <div class="flex flex-col text-xs text-gray-500 mt-2 space-y-1.5">
+                                <div class="flex flex-col text-xs text-gray-500 mt-2 space-y-1.5 mb-5">
                                     <div class="flex items-start">
                                         <svg class="w-3.5 h-3.5 mr-1.5 flex-shrink-0 text-red-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.242-4.243a8 8 0 1111.314 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
                                         <div class="leading-relaxed">
@@ -108,13 +109,21 @@ foreach ($all_clients as $client) {
                                     </div>
                                 </div>
                                 
-                                <!-- Copy Link Button -->
-                                <button onclick="event.preventDefault(); copyToClipboard('<?= htmlspecialchars($c['folder_foto_path']) ?>', this);" class="mt-4 flex items-center justify-center w-full bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-2.5 rounded-lg transition-colors border border-slate-200">
-                                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg>
-                                    <span>Copy Link Galeri</span>
-                                </button>
+                                <!-- Tombol Aksi Klien -->
+                                <div class="flex gap-2">
+                                    <!-- Tombol Buka Galeri -->
+                                    <a href="<?= htmlspecialchars($c['folder_foto_path']) ?>" target="_blank" class="flex-1 flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 rounded-lg transition-colors shadow-sm">
+                                        <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+                                        Buka Galeri
+                                    </a>
+                                    <!-- Tombol Copy Link -->
+                                    <button onclick="copyToClipboard('<?= htmlspecialchars($c['folder_foto_path']) ?>', this);" class="flex-1 flex items-center justify-center bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-2.5 rounded-lg transition-colors border border-slate-200 shadow-sm">
+                                        <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg>
+                                        <span>Copy Link</span>
+                                    </button>
+                                </div>
                             </div>
-                        </a>
+                        </div>
                     <?php endforeach; ?>
                 <?php else: ?>
                     <div class="text-center py-8 text-gray-400">
