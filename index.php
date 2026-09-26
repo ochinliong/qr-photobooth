@@ -44,7 +44,7 @@ foreach ($all_clients as $client) {
 <body class="bg-gray-50 flex flex-col min-h-screen">
     <div class="flex-grow flex flex-col items-center justify-center p-4">
         <!-- Logo Brand -->
-        <div class="mb-8 flex flex-col items-center justify-center text-center w-full px-4">
+        <div class="mb-8 flex flex-col items-center justify-center text-center w-full">
             <img src="https://qr.yuhu.co.id/client/logo.png" alt="Yuhu Logo" class="h-16 md:h-20 w-auto mb-6 drop-shadow-sm transition-transform duration-300 hover:scale-105">
             
             <!-- Card Sambutan -->
