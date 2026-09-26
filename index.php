@@ -46,7 +46,7 @@ foreach ($all_clients as $client) {
         <div class="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden p-6">
             <h2 class="text-xl font-semibold text-gray-800 mb-6 text-center">Live Events</h2>
             
-            <div class="space-y-4">
+            <div id="event-list" class="space-y-4">
                 <?php if (count($active_clients) > 0): ?>
                     <?php foreach($active_clients as $c): ?>
                         <a href="<?= htmlspecialchars($c['folder_foto_path']) ?>" target="_blank" class="block group relative p-4 bg-gray-50 border border-gray-100 rounded-xl hover:bg-blue-50 hover:border-blue-200 transition-all duration-300">
@@ -73,5 +73,32 @@ foreach ($all_clients as $client) {
     <footer class="text-center py-6 text-sm text-gray-400">
         &copy; <?= date('Y') ?> Yuhu Photobooth. All rights reserved.
     </footer>
+
+    <script>
+        // Fitur Auto-Refresh "Tanpa Kedip" (AJAX)
+        // Mengecek ke server setiap 30 detik apakah ada perubahan data
+        setInterval(() => {
+            fetch(window.location.href)
+                .then(response => response.text())
+                .then(html => {
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(html, 'text/html');
+                    const newContent = doc.querySelector('#event-list').innerHTML;
+                    const currentElement = document.querySelector('#event-list');
+                    
+                    // Jika ada perbedaan (event baru mulai / event selesai / admin menambah event)
+                    if (newContent.trim() !== currentElement.innerHTML.trim()) {
+                        // Terapkan animasi transisi (fade out & in) agar halus
+                        currentElement.style.opacity = 0;
+                        setTimeout(() => {
+                            currentElement.innerHTML = newContent;
+                            currentElement.style.transition = 'opacity 0.5s ease-in-out';
+                            currentElement.style.opacity = 1;
+                        }, 300);
+                    }
+                })
+                .catch(err => console.error('Gagal mengecek update otomatis:', err));
+        }, 30000); // 30000 ms = 30 detik
+    </script>
 </body>
 </html>
