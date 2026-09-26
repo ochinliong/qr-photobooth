@@ -38,9 +38,10 @@ foreach ($all_clients as $client) {
 <body class="bg-gray-50 flex flex-col min-h-screen">
     <div class="flex-grow flex flex-col items-center justify-center p-4">
         <!-- Logo Brand -->
-        <div class="mb-10 flex flex-col items-center justify-center text-center">
-            <img src="https://qr.yuhu.co.id/client/logo.png" alt="Yuhu Logo" class="h-16 md:h-20 w-auto mb-3 drop-shadow-sm transition-transform duration-300 hover:scale-105">
-            <p class="text-gray-500 font-medium tracking-wide">Photobooth Portal</p>
+        <div class="mb-10 flex flex-col items-center justify-center text-center max-w-lg mx-auto px-4">
+            <img src="https://qr.yuhu.co.id/client/logo.png" alt="Yuhu Logo" class="h-16 md:h-20 w-auto mb-6 drop-shadow-sm transition-transform duration-300 hover:scale-105">
+            <h2 class="text-xl md:text-2xl font-bold text-gray-800 mb-2">Akses Galeri Foto Anda</h2>
+            <p class="text-gray-500 text-sm md:text-base leading-relaxed">Terima kasih telah mengabadikan momen bersama kami. Silakan cari nama acara yang Anda hadiri pada daftar di bawah ini, lalu klik tombol tersebut untuk melihat dan mengunduh hasil foto Anda.</p>
         </div>
 
         <div class="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden p-6">
