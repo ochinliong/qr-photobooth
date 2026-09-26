@@ -156,21 +156,23 @@ foreach ($all_clients as $client) {
     </footer>
 
     <script>
-        // Tampilkan Popup Peringatan (SweetAlert) Sekali Saja
-        if (!sessionStorage.getItem('warning_shown')) {
-            Swal.fire({
-                icon: 'warning',
-                title: 'Perhatian!',
-                text: 'Halaman ini bersifat sementara. Tolong JANGAN menyimpan / membagikan link dari browser (files.yuhu.co.id). Untuk membagikan hasil foto, silakan klik tombol "Copy Link" pada nama acara Anda di bawah.',
-                confirmButtonText: 'Saya Mengerti',
-                confirmButtonColor: '#2563eb',
-                customClass: {
-                    title: 'text-xl font-bold',
-                    popup: 'rounded-2xl'
-                }
-            });
-            sessionStorage.setItem('warning_shown', 'true');
-        }
+        // Tampilkan Popup Peringatan (SweetAlert) saat pengunjung mengetuk Address Bar (kehilangan fokus)
+        window.addEventListener('blur', function() {
+            if (!sessionStorage.getItem('blur_warning_shown')) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Perhatian!',
+                    text: 'Tolong JANGAN membagikan atau menyimpan link dari atas browser (files.yuhu.co.id). Halaman ini bersifat sementara. Gunakan tombol "Copy Link" pada acara Anda di bawah.',
+                    confirmButtonText: 'Saya Mengerti',
+                    confirmButtonColor: '#2563eb',
+                    customClass: {
+                        title: 'text-xl font-bold',
+                        popup: 'rounded-2xl'
+                    }
+                });
+                sessionStorage.setItem('blur_warning_shown', 'true');
+            }
+        });
 
         // Fitur Copy Link
         function copyToClipboard(text, btn) {
