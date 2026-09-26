@@ -1,5 +1,86 @@
 <?php
+session_start();
 require_once '../config.php';
+
+// Konfigurasi Keamanan PIN (PIN: 8080)
+// Di-hash menggunakan SHA-256 agar tidak bisa dibaca langsung (anti-hack)
+$secured_pin_hash = '6c237681e70921603a306be9a1a5d9833fce5c1e268f52b1650970eaad0dce21';
+
+// Cek Logout
+if (isset($_GET['logout'])) {
+    session_destroy();
+    header("Location: index.php");
+    exit;
+}
+
+// Cek Login PIN
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['operator_pin'])) {
+    if (hash('sha256', $_POST['operator_pin']) === $secured_pin_hash) {
+        $_SESSION['operator_logged_in'] = true;
+        header("Location: index.php");
+        exit;
+    } else {
+        $error_msg = "PIN yang Anda masukkan salah!";
+    }
+}
+
+// Jika belum login, tampilkan form PIN
+if (!isset($_SESSION['operator_logged_in']) || $_SESSION['operator_logged_in'] !== true) {
+?>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Login Operator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        /* Animasi Shake untuk Error */
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+            20%, 40%, 60%, 80% { transform: translateX(5px); }
+        }
+        .shake-animation { animation: shake 0.5s; }
+    </style>
+</head>
+<body class="bg-slate-50 flex items-center justify-center min-h-screen p-4">
+    <div class="w-full max-w-sm bg-white rounded-3xl shadow-xl p-8 border border-slate-100 text-center <?= isset($error_msg) ? 'shake-animation' : '' ?>">
+        <div class="mx-auto bg-blue-50 w-16 h-16 rounded-full flex items-center justify-center mb-6 border-4 border-white shadow-sm">
+            <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+        </div>
+        <h2 class="text-2xl font-extrabold text-slate-800 mb-2">Akses Operator</h2>
+        <p class="text-sm text-slate-500 mb-8">Masukkan PIN Keamanan Anda</p>
+        
+        <?php if(isset($error_msg)): ?>
+            <div class="bg-red-50 text-red-600 text-xs font-bold px-4 py-2 rounded-lg mb-6 inline-block w-full">
+                <?= $error_msg ?>
+            </div>
+        <?php endif; ?>
+
+        <form method="POST" action="">
+            <div class="mb-8">
+                <!-- Inputmode numeric memunculkan numpad/angka saja di HP -->
+                <!-- Type password menyembunyikan angka yang diketik -->
+                <input type="password" name="operator_pin" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="••••" required autofocus
+                    class="w-full text-center text-3xl font-bold tracking-[1em] text-slate-800 border-b-2 border-slate-200 focus:border-blue-500 bg-transparent py-2 outline-none transition-colors">
+            </div>
+            <button type="submit" class="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-3.5 rounded-xl transition-all shadow-md active:scale-95">
+                Buka Panel
+            </button>
+        </form>
+    </div>
+</body>
+</html>
+<?php
+    exit; // Berhenti mengeksekusi kode di bawah jika belum login
+}
+
+// =========================================================================
+// KODE DI BAWAH INI HANYA AKAN DIEKSEKUSI JIKA OPERATOR SUDAH LOGIN (PIN BENAR)
+// =========================================================================
 
 // Ambil semua data klien, urutkan dari tanggal terbaru, lalu jam mulai
 $stmt = $pdo->query("SELECT * FROM clients ORDER BY tanggal_event DESC, jam_mulai DESC");
@@ -57,9 +138,14 @@ function formatTanggalIndo($dateStr) {
                     <p class="text-[10px] text-blue-600 font-bold uppercase tracking-widest">Internal Use Only</p>
                 </div>
             </div>
-            <a href="../" class="p-2 text-slate-400 hover:text-slate-700 bg-slate-50 rounded-full transition-colors">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
-            </a>
+            <div class="flex gap-2">
+                <a href="../" class="p-2 text-slate-400 hover:text-slate-700 bg-slate-50 rounded-full transition-colors" title="Ke Halaman Utama">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
+                </a>
+                <a href="?logout=1" class="p-2 text-red-400 hover:text-red-600 bg-red-50 rounded-full transition-colors" title="Logout">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+                </a>
+            </div>
         </div>
     </div>
 
