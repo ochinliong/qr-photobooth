@@ -31,11 +31,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
     $qr_filename = $slug . '.png';
     $qr_filepath = '../uploads/qrcodes/' . $qr_filename;
     
-    // Fetch and save QR image
-    $qr_content = @file_get_contents($qr_api);
-    if ($qr_content !== false) {
-        file_put_contents($qr_filepath, $qr_content);
-    }
+    // Fetch and save QR image using cURL to avoid file_get_contents disabled issue
+    $ch = curl_init($qr_api);
+    $fp = fopen($qr_filepath, 'wb');
+    curl_setopt($ch, CURLOPT_FILE, $fp);
+    curl_setopt($ch, CURLOPT_HEADER, 0);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_exec($ch);
+    curl_close($ch);
+    fclose($fp);
 
     $stmt = $pdo->prepare("INSERT INTO clients (nama_client, slug, tanggal_event, jam_mulai, jam_selesai, qr_code_path, folder_foto_path) VALUES (?, ?, ?, ?, ?, ?, ?)");
     $stmt->execute([$nama_client, $slug, $tanggal_event, $jam_mulai, $jam_selesai, 'uploads/qrcodes/'.$qr_filename, 'uploads/'.$slug]);

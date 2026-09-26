@@ -1,30 +1,24 @@
 <?php
 require_once 'config.php';
 
-// Waktu saat ini (Server Time)
-$current_time = time();
-
 // Ambil semua klien
 $stmt = $pdo->query("SELECT * FROM clients");
 $all_clients = $stmt->fetchAll();
 
 $active_clients = [];
+$now = new DateTime('now', new DateTimeZone('Asia/Jakarta'));
 
 foreach ($all_clients as $client) {
-    // LOGIKA VISIBILITAS (1 Jam Sebelum s/d 1 Jam Sesudah)
+    $start = new DateTime($client['tanggal_event'] . ' ' . $client['jam_mulai'], new DateTimeZone('Asia/Jakarta'));
+    $end   = new DateTime($client['tanggal_event'] . ' ' . $client['jam_selesai'], new DateTimeZone('Asia/Jakarta'));
     
-    // Gabungkan tanggal event dan jam untuk mendapatkan timestamp presisi
-    $event_start_ts = strtotime($client['tanggal_event'] . ' ' . $client['jam_mulai']);
-    $event_end_ts   = strtotime($client['tanggal_event'] . ' ' . $client['jam_selesai']);
+    $visible_start = clone $start;
+    $visible_start->modify('-1 hour');
     
-    // Visibilitas dimulai 1 Jam (3600 detik) sebelum jam mulai
-    $visible_start = $event_start_ts - 3600;
+    $visible_end = clone $end;
+    $visible_end->modify('+1 hour');
     
-    // Visibilitas berakhir 1 Jam (3600 detik) sesudah jam selesai
-    $visible_end   = $event_end_ts + 3600;
-    
-    // Jika waktu server saat ini berada di antara batas waktu tampil
-    if ($current_time >= $visible_start && $current_time <= $visible_end) {
+    if ($now >= $visible_start && $now <= $visible_end) {
         $active_clients[] = $client;
     }
 }
