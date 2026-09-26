@@ -18,6 +18,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
     if (!file_exists($folder_path)) {
         mkdir($folder_path, 0777, true);
     }
+    
+    // Create folder for QR Codes if not exists
+    $qr_folder_path = '../uploads/qrcodes';
+    if (!file_exists($qr_folder_path)) {
+        mkdir($qr_folder_path, 0777, true);
+    }
 
     // Generate QR Code via API
     $qr_data = $base_url . '/client/?c=' . $slug;
