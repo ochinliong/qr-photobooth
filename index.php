@@ -30,6 +30,7 @@ foreach ($all_clients as $client) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Portal Photobooth</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
         body { 
@@ -155,6 +156,22 @@ foreach ($all_clients as $client) {
     </footer>
 
     <script>
+        // Tampilkan Popup Peringatan (SweetAlert) Sekali Saja
+        if (!sessionStorage.getItem('warning_shown')) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Perhatian!',
+                text: 'Halaman ini bersifat sementara. Tolong JANGAN menyimpan / membagikan link dari browser (files.yuhu.co.id). Untuk membagikan hasil foto, silakan klik tombol "Copy Link" pada nama acara Anda di bawah.',
+                confirmButtonText: 'Saya Mengerti',
+                confirmButtonColor: '#2563eb',
+                customClass: {
+                    title: 'text-xl font-bold',
+                    popup: 'rounded-2xl'
+                }
+            });
+            sessionStorage.setItem('warning_shown', 'true');
+        }
+
         // Fitur Copy Link
         function copyToClipboard(text, btn) {
             navigator.clipboard.writeText(text).then(() => {
