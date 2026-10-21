@@ -1,6 +1,7 @@
 <?php
 header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json; charset=UTF-8");
+@set_time_limit(300);
 
 require_once '../config.php';
 // Lepaskan pengunci sesi PHP seketika agar 4+ komputer yang upload bersamaan tidak saling antre!
@@ -10,14 +11,16 @@ if (session_status() === PHP_SESSION_ACTIVE) {
 define('LUMABOOTH_SKIP_AUTOSYNC', true);
 require_once __DIR__ . '/../lumabooth_sync.php';
 
-// 1. Password/Token Keamanan (Mendukung token YUHU v5 & token Portal)
+// 1. Password/Token Keamanan (Mendukung token YUHU v5-v11 & token Portal)
 $VALID_TOKENS = ["YuhuSecretToken2026", "yuhu8080", "8080"];
 
-// 2. Cek autentikasi token keamanan
+// 2. Cek autentikasi token keamanan (dari Header, POST, atau GET)
 $headers = function_exists('apache_request_headers') ? apache_request_headers() : [];
 $auth_token = '';
 if (isset($headers['Authorization'])) {
     $auth_token = trim(str_replace('Bearer ', '', $headers['Authorization']));
+} elseif (isset($_SERVER['HTTP_X_API_TOKEN'])) {
+    $auth_token = trim($_SERVER['HTTP_X_API_TOKEN']);
 } elseif (isset($_SERVER['HTTP_X_API_KEY'])) {
     $auth_token = trim($_SERVER['HTTP_X_API_KEY']);
 } elseif (isset($_POST['token'])) {
@@ -39,8 +42,16 @@ if (isset($_GET['action']) && $_GET['action'] === 'ping') {
     exit;
 }
 
-// 3. Cek parameter Event / Client dari LumaBooth (nama folder di C:\dslrBooth\<EventName>)
-$client_event = isset($_POST['client_event']) ? trim($_POST['client_event']) : '';
+// 3. Cek parameter Event / Client dari LumaBooth (mendukung Header X-Client-Event, POST, atau GET)
+$client_event = '';
+if (!empty($_SERVER['HTTP_X_CLIENT_EVENT'])) {
+    $client_event = trim(rawurldecode($_SERVER['HTTP_X_CLIENT_EVENT']));
+} elseif (isset($_POST['client_event'])) {
+    $client_event = trim($_POST['client_event']);
+} elseif (isset($_GET['client_event'])) {
+    $client_event = trim($_GET['client_event']);
+}
+
 if (empty($client_event)) {
     http_response_code(400);
     echo json_encode(["status" => "error", "message" => "Gagal: Nama event harus diisi (client_event)"]);
@@ -87,6 +98,9 @@ if (!is_dir($event_dir)) {
     @mkdir($event_dir, 0777, true);
 }
 
+// Bersihkan file dummy pengujian jika ada
+@unlink($base_dir . 'The_Wedding_of_Cipung_Cipang/Prints/test_1900kb.jpg');
+
 // =========================================================================
 // AUTO-SYNC DENGAN DATABASE PORTAL QR (photobooth_db -> tabel clients)
 // Otomatis membuat link di files.yuhu.co.id sesuai nama project LumaBooth!
@@ -108,29 +122,53 @@ if (isset($_REQUEST['action']) && $_REQUEST['action'] === 'register_event') {
     exit;
 }
 
-// 4. Cek File yang masuk
-if (!isset($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
-    http_response_code(400);
-    echo json_encode(["status" => "error", "message" => "Gagal: File korup atau tidak ada file yang dikirim"]);
-    exit;
+// 4. Tentukan mode upload:
+//    Mode A: Raw Binary Stream (php://input dengan Header X-File-Name atau GET file_name)
+//            -> Bebas batas upload_max_filesize=2M bawaan php.ini untuk foto/video ukuran besar!
+//    Mode B: Multipart Form-Data standar ($_FILES['file'])
+$is_raw_stream = false;
+$original_name = '';
+$expected_size = 0;
+
+if (!empty($_SERVER['HTTP_X_FILE_SIZE'])) {
+    $expected_size = (int)$_SERVER['HTTP_X_FILE_SIZE'];
+} elseif (isset($_REQUEST['file_size'])) {
+    $expected_size = (int)$_REQUEST['file_size'];
 }
 
-$tmp_name = $_FILES['file']['tmp_name'];
-$original_name = basename($_FILES['file']['name']);
-$ext = strtolower(pathinfo($original_name, PATHINFO_EXTENSION));
+if (!empty($_SERVER['HTTP_X_FILE_NAME'])) {
+    $original_name = basename(rawurldecode(trim($_SERVER['HTTP_X_FILE_NAME'])));
+    $is_raw_stream = true;
+} elseif (!empty($_GET['file_name'])) {
+    $original_name = basename(trim($_GET['file_name']));
+    $is_raw_stream = true;
+}
 
-// Validasi ukuran file (opsional jika dikirim dari script YUHU v5)
-$actual_size = @filesize($tmp_name);
-if (isset($_POST['file_size']) && (int)$_POST['file_size'] > 0) {
-    if ($actual_size !== (int)$_POST['file_size']) {
-        http_response_code(422);
-        echo json_encode(["status" => "error", "message" => "Ukuran file tidak utuh (terputus saat upload)"]);
+$tmp_name = '';
+if (!$is_raw_stream) {
+    if (!isset($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
+        $err_code = isset($_FILES['file']['error']) ? (int)$_FILES['file']['error'] : -1;
+        http_response_code(400);
+        echo json_encode([
+            "status" => "error",
+            "error_code" => $err_code,
+            "message" => "Gagal: File korup atau melebihi batas upload multipart (err=$err_code)"
+        ]);
         exit;
     }
+    $tmp_name = $_FILES['file']['tmp_name'];
+    $original_name = basename($_FILES['file']['name']);
 }
 
+$ext = strtolower(pathinfo($original_name, PATHINFO_EXTENSION));
+
 // 5. Tentukan Target Sub-Folder Otomatis (Prints, Animated, Singles, Videos, Originals)
-$target_folder = isset($_POST['folder_target']) ? trim($_POST['folder_target']) : '';
+$target_folder = '';
+if (!empty($_SERVER['HTTP_X_FOLDER_TARGET'])) {
+    $target_folder = trim($_SERVER['HTTP_X_FOLDER_TARGET']);
+} elseif (isset($_REQUEST['folder_target'])) {
+    $target_folder = trim($_REQUEST['folder_target']);
+}
 $target_folder = str_replace(['..', '/', '\\', "\0"], '', $target_folder);
 
 if (empty($target_folder)) {
@@ -161,15 +199,74 @@ if (!is_dir($upload_dir)) {
     @mkdir($upload_dir, 0777, true);
 }
 
-// 6. Simpan File dengan Atomic Write (.part -> rename) & Multi-PC Collision Protection
 $filename = preg_replace('/[^a-zA-Z0-9_.\-& ]/', '', $original_name);
+if (empty($filename)) {
+    http_response_code(400);
+    echo json_encode(["status" => "error", "message" => "Nama file tidak valid"]);
+    exit;
+}
 $target_path = $upload_dir . $filename;
 
-// Jika file sudah ada:
+// Jika file sudah ada secara utuh dengan ukuran yang sama (idempotent retry), langsung sukses tanpa perlu menulis ulang!
+if ($expected_size > 0 && file_exists($target_path) && @filesize($target_path) === $expected_size) {
+    http_response_code(200);
+    echo json_encode([
+        "status" => "success",
+        "message" => "File $filename sudah ada secara utuh di folder $target_folder",
+        "file" => $filename,
+        "folder" => $target_folder,
+        "event" => $matched_folder
+    ]);
+    exit;
+}
+
+$temp_path = $target_path . '.part_' . uniqid('', true) . '_' . mt_rand(1000, 9999);
+
+if ($is_raw_stream) {
+    $in = @fopen('php://input', 'rb');
+    $out = @fopen($temp_path, 'wb');
+    if (!$in || !$out) {
+        if ($in) @fclose($in);
+        if ($out) @fclose($out);
+        @unlink($temp_path);
+        http_response_code(500);
+        echo json_encode(["status" => "error", "message" => "Gagal membuka stream di server"]);
+        exit;
+    }
+    $written = @stream_copy_to_stream($in, $out);
+    @fclose($in);
+    @fclose($out);
+    clearstatcache(true, $temp_path);
+    $actual_size = @filesize($temp_path);
+    if ($actual_size === false || $actual_size === 0 || ($expected_size > 0 && $actual_size !== $expected_size)) {
+        @unlink($temp_path);
+        http_response_code(422);
+        echo json_encode([
+            "status" => "error",
+            "message" => "Ukuran stream tidak utuh (diterima $actual_size dari $expected_size bytes)"
+        ]);
+        exit;
+    }
+} else {
+    $actual_size = @filesize($tmp_name);
+    if ($expected_size > 0 && $actual_size !== $expected_size) {
+        http_response_code(422);
+        echo json_encode(["status" => "error", "message" => "Ukuran file tidak utuh (terputus saat upload)"]);
+        exit;
+    }
+    if (!@move_uploaded_file($tmp_name, $temp_path)) {
+        @unlink($temp_path);
+        http_response_code(500);
+        echo json_encode(["status" => "error", "message" => "Internal Server Error: Gagal menyimpan file di server"]);
+        exit;
+    }
+}
+
+// Multi-PC Collision Protection: Cek apakah sudah ada file dengan nama sama di tujuan
 if (file_exists($target_path) && $actual_size > 0) {
     $existing_size = @filesize($target_path);
     if ($existing_size === $actual_size) {
-        // Ukurannya sama persis -> File yang sama dari retry (idempotent), langsung sukses!
+        @unlink($temp_path);
         http_response_code(200);
         echo json_encode([
             "status" => "success",
@@ -180,13 +277,12 @@ if (file_exists($target_path) && $actual_size > 0) {
         ]);
         exit;
     } else {
-        // Ukurannya berbeda -> Berasal dari Komputer Photobooth lain dengan nama file kamera yang kebetulan sama!
-        // Tambahkan kode unik 4-karakter dari isi file agar foto dari Komputer 1 & Komputer 2 sama-sama tersimpan aman.
-        $file_hash = substr(@md5_file($tmp_name) ?: uniqid(), 0, 4);
+        $file_hash = substr(@md5_file($temp_path) ?: uniqid(), 0, 4);
         $base_no_ext = pathinfo($filename, PATHINFO_FILENAME);
         $filename = $base_no_ext . '_' . $file_hash . '.' . $ext;
         $target_path = $upload_dir . $filename;
         if (file_exists($target_path) && @filesize($target_path) === $actual_size) {
+            @unlink($temp_path);
             http_response_code(200);
             echo json_encode([
                 "status" => "success",
@@ -200,22 +296,16 @@ if (file_exists($target_path) && $actual_size > 0) {
     }
 }
 
-$temp_path = $target_path . '.part_' . uniqid('', true) . '_' . mt_rand(1000, 9999);
-if (move_uploaded_file($tmp_name, $temp_path)) {
-    if (!@rename($temp_path, $target_path)) {
-        @copy($temp_path, $target_path);
-        @unlink($temp_path);
-    }
-    http_response_code(200);
-    echo json_encode([
-        "status" => "success",
-        "message" => "Berhasil! File $filename mendarat di folder $matched_folder/$target_folder",
-        "file" => $filename,
-        "folder" => $target_folder,
-        "event" => $matched_folder
-    ]);
-} else {
+if (!@rename($temp_path, $target_path)) {
+    @copy($temp_path, $target_path);
     @unlink($temp_path);
-    http_response_code(500);
-    echo json_encode(["status" => "error", "message" => "Internal Server Error: Gagal menyimpan file di server"]);
 }
+
+http_response_code(200);
+echo json_encode([
+    "status" => "success",
+    "message" => "Berhasil! File $filename mendarat di folder $matched_folder/$target_folder",
+    "file" => $filename,
+    "folder" => $target_folder,
+    "event" => $matched_folder
+]);
