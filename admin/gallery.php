@@ -193,7 +193,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $selected_folder !== '') {
 
     // 3. Toggle Sembunyikan / Tampilkan 1 File
     if (isset($_POST['toggle_hide_file']) && !empty($_POST['filename'])) {
-        $fn = str_replace('\\', '/', $_POST['filename']);
+        $fn = ltrim(str_replace('\\', '/', $_POST['filename']), '/');
         if (in_array($fn, $hidden, true)) {
             $hidden = array_values(array_diff($hidden, [$fn]));
             $flash_msg = "Foto berhasil ditampilkan kembali ke galeri tamu!";
@@ -201,18 +201,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $selected_folder !== '') {
             $hidden[] = $fn;
             $flash_msg = "Foto berhasil disembunyikan dari galeri tamu!";
         }
-        $cfg['hidden_files'] = array_values(array_unique($hidden));
+        $cfg['hidden_files'] = array_values(array_unique(array_map(function($f) {
+            return ltrim(str_replace('\\', '/', $f), '/');
+        }, $hidden)));
         saveEventGalleryConfig($config_file, $cfg);
     }
 
     // 4. Hapus 1 File Permanen
     if (isset($_POST['delete_single_file']) && !empty($_POST['filename'])) {
         $fn = str_replace(['..', '\\'], ['', '/'], $_POST['filename']);
-        $fp = $selected_dir_path . '/' . ltrim($fn, '/');
+        $fn_clean = ltrim($fn, '/');
+        $fp = $selected_dir_path . '/' . $fn_clean;
         if (file_exists($fp) && is_file($fp)) {
             @unlink($fp);
-            $hidden = array_values(array_diff($hidden, [$fn]));
-            $cfg['hidden_files'] = $hidden;
+            $hidden = array_values(array_diff($hidden, [$fn_clean, $fn]));
+            $cfg['hidden_files'] = array_values(array_unique(array_map(function($f) {
+                return ltrim(str_replace('\\', '/', $f), '/');
+            }, $hidden)));
             saveEventGalleryConfig($config_file, $cfg);
             $flash_msg = "File berhasil dihapus permanen!";
         }
@@ -220,33 +225,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $selected_folder !== '') {
 
     // 5. Aksi Per Sesi (Sembunyikan Sesi / Tampilkan Sesi / Hapus Sesi)
     if (!empty($_POST['session_files'])) {
-        $sess_files = json_decode($_POST['session_files'], true);
-        if (is_array($sess_files)) {
-            if (isset($_POST['hide_session'])) {
-                foreach ($sess_files as $fn) {
-                    $fn = str_replace('\\', '/', $fn);
+        $raw_sf = $_POST['session_files'];
+        $sess_files = json_decode($raw_sf, true);
+        if (!is_array($sess_files)) {
+            $sess_files = json_decode(stripslashes($raw_sf), true);
+        }
+        if (!is_array($sess_files)) {
+            $sess_files = array_filter(array_map('trim', explode(',', $raw_sf)));
+        }
+
+        if (is_array($sess_files) && !empty($sess_files)) {
+            $sess_files_norm = array_values(array_unique(array_map(function($f) {
+                return ltrim(str_replace('\\', '/', $f), '/');
+            }, $sess_files)));
+
+            $sess_act = $_POST['session_action'] ?? '';
+            $is_hide = (isset($_POST['hide_session']) || $sess_act === 'hide');
+            $is_unhide = (isset($_POST['unhide_session']) || $sess_act === 'unhide');
+            $is_delete = (isset($_POST['delete_session']) || $sess_act === 'delete');
+
+            if ($is_hide) {
+                foreach ($sess_files_norm as $fn) {
                     if (!in_array($fn, $hidden, true)) $hidden[] = $fn;
                 }
-                $cfg['hidden_files'] = array_values(array_unique($hidden));
+                $cfg['hidden_files'] = array_values(array_unique(array_map(function($f) {
+                    return ltrim(str_replace('\\', '/', $f), '/');
+                }, $hidden)));
                 saveEventGalleryConfig($config_file, $cfg);
                 $flash_msg = "Seluruh foto pada sesi tersebut berhasil disembunyikan!";
-            } elseif (isset($_POST['unhide_session'])) {
-                $hidden = array_values(array_diff($hidden, $sess_files));
-                $cfg['hidden_files'] = $hidden;
+            } elseif ($is_unhide) {
+                $hidden = array_values(array_diff($hidden, $sess_files_norm));
+                $cfg['hidden_files'] = array_values(array_unique(array_map(function($f) {
+                    return ltrim(str_replace('\\', '/', $f), '/');
+                }, $hidden)));
                 saveEventGalleryConfig($config_file, $cfg);
                 $flash_msg = "Seluruh foto pada sesi tersebut berhasil ditampilkan kembali!";
-            } elseif (isset($_POST['delete_session'])) {
+            } elseif ($is_delete) {
                 $del_cnt = 0;
-                foreach ($sess_files as $fn) {
-                    $fn = str_replace(['..', '\\'], ['', '/'], $fn);
-                    $fp = $selected_dir_path . '/' . ltrim($fn, '/');
+                foreach ($sess_files_norm as $fn) {
+                    $fn_clean = str_replace(['..', '\\'], ['', '/'], $fn);
+                    $fp = $selected_dir_path . '/' . ltrim($fn_clean, '/');
                     if (file_exists($fp) && is_file($fp)) {
                         @unlink($fp);
                         $del_cnt++;
                     }
                 }
-                $hidden = array_values(array_diff($hidden, $sess_files));
-                $cfg['hidden_files'] = $hidden;
+                $hidden = array_values(array_diff($hidden, $sess_files_norm));
+                $cfg['hidden_files'] = array_values(array_unique(array_map(function($f) {
+                    return ltrim(str_replace('\\', '/', $f), '/');
+                }, $hidden)));
                 saveEventGalleryConfig($config_file, $cfg);
                 $flash_msg = "Sesi berhasil dihapus ($del_cnt file dihapus permanen)!";
             }
@@ -255,23 +282,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $selected_folder !== '') {
 
     // 6. Bulk Actions (Sembunyikan Terpilih / Tampilkan Terpilih / Hapus Terpilih)
     if (!empty($_POST['bulk_files']) && is_array($_POST['bulk_files'])) {
-        $b_files = array_map(function($f) { return str_replace('\\', '/', $f); }, $_POST['bulk_files']);
-        if (isset($_POST['bulk_hide'])) {
+        $b_files = array_values(array_unique(array_map(function($f) {
+            return ltrim(str_replace('\\', '/', $f), '/');
+        }, $_POST['bulk_files'])));
+
+        $bulk_act = $_POST['bulk_action'] ?? '';
+        $is_b_hide = (isset($_POST['bulk_hide']) || $bulk_act === 'hide');
+        $is_b_unhide = (isset($_POST['bulk_unhide']) || $bulk_act === 'unhide');
+        $is_b_delete = (isset($_POST['bulk_delete']) || $bulk_act === 'delete');
+
+        if ($is_b_hide) {
             foreach ($b_files as $f) {
                 if (!in_array($f, $hidden, true)) $hidden[] = $f;
             }
-            $cfg['hidden_files'] = array_values(array_unique($hidden));
+            $cfg['hidden_files'] = array_values(array_unique(array_map(function($f) {
+                return ltrim(str_replace('\\', '/', $f), '/');
+            }, $hidden)));
             saveEventGalleryConfig($config_file, $cfg);
             $flash_msg = count($b_files) . " file terpilih berhasil disembunyikan dari galeri tamu!";
-        } elseif (isset($_POST['bulk_unhide'])) {
+        } elseif ($is_b_unhide) {
             $hidden = array_values(array_diff($hidden, $b_files));
-            $cfg['hidden_files'] = $hidden;
+            $cfg['hidden_files'] = array_values(array_unique(array_map(function($f) {
+                return ltrim(str_replace('\\', '/', $f), '/');
+            }, $hidden)));
             saveEventGalleryConfig($config_file, $cfg);
             $flash_msg = count($b_files) . " file terpilih berhasil ditampilkan kembali!";
-        } elseif (isset($_POST['bulk_delete'])) {
+        } elseif ($is_b_delete) {
             $del_cnt = 0;
             foreach ($b_files as $fn) {
-                $fn_clean = str_replace('..', '', $fn);
+                $fn_clean = str_replace(['..', '\\'], ['', '/'], $fn);
                 $fp = $selected_dir_path . '/' . ltrim($fn_clean, '/');
                 if (file_exists($fp) && is_file($fp)) {
                     @unlink($fp);
@@ -279,7 +318,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $selected_folder !== '') {
                 }
             }
             $hidden = array_values(array_diff($hidden, $b_files));
-            $cfg['hidden_files'] = $hidden;
+            $cfg['hidden_files'] = array_values(array_unique(array_map(function($f) {
+                return ltrim(str_replace('\\', '/', $f), '/');
+            }, $hidden)));
             saveEventGalleryConfig($config_file, $cfg);
             $flash_msg = "Berhasil menghapus permanen $del_cnt file terpilih!";
         }
@@ -703,17 +744,21 @@ $sessions = array_values($sessions_map);
 
                             <!-- Tombol Bulk Action -->
                             <?php if (!empty($sessions)): ?>
+                            <form method="POST" id="bulkActionForm" class="hidden">
+                                <input type="hidden" name="bulk_action" id="bulkActionInput" value="">
+                                <div id="bulkFilesContainer"></div>
+                            </form>
                             <div class="flex items-center gap-2 flex-wrap">
                                 <button type="button" onclick="toggleSelectAll()" id="btnSelectAll" class="bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-bold px-3 py-2 rounded-lg transition">
                                     ☑️ Pilih Semua
                                 </button>
-                                <button type="submit" form="bulkActionForm" name="bulk_hide" id="btnBulkHide" disabled class="bg-amber-500 hover:bg-amber-600 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-bold px-3 py-2 rounded-lg transition">
+                                <button type="button" onclick="submitBulk('hide')" id="btnBulkHide" disabled class="bg-amber-500 hover:bg-amber-600 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-bold px-3 py-2 rounded-lg transition">
                                     🙈 Sembunyikan (0)
                                 </button>
-                                <button type="submit" form="bulkActionForm" name="bulk_unhide" id="btnBulkUnhide" disabled class="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-bold px-3 py-2 rounded-lg transition">
+                                <button type="button" onclick="submitBulk('unhide')" id="btnBulkUnhide" disabled class="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-bold px-3 py-2 rounded-lg transition">
                                     👁️ Tampilkan (0)
                                 </button>
-                                <button type="submit" form="bulkActionForm" name="bulk_delete" id="btnBulkDelete" disabled onclick="return confirm('Yakin ingin MENGHAPUS PERMANEN file yang dicentang?');" class="bg-red-600 hover:bg-red-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-bold px-3 py-2 rounded-lg transition">
+                                <button type="button" onclick="submitBulk('delete')" id="btnBulkDelete" disabled class="bg-red-600 hover:bg-red-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-bold px-3 py-2 rounded-lg transition">
                                     🗑️ Hapus Permanen (0)
                                 </button>
                             </div>
@@ -731,32 +776,69 @@ $sessions = array_values($sessions_map);
                             </p>
                         </div>
                     <?php else: ?>
-                        <form method="POST" id="bulkActionForm" class="space-y-6">
-                            <?php foreach ($sessions as $idx => $sess): ?>
-                                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                        <div class="space-y-6">
+                            <?php foreach ($sessions as $idx => $sess): 
+                                $s_files = array_map(function($i) { return $i['file']; }, $sess['files']);
+                                $sess_json = htmlspecialchars(json_encode($s_files), ENT_QUOTES, 'UTF-8');
+                                
+                                $sess_all_hidden = true;
+                                $sess_any_hidden = false;
+                                foreach ($sess['files'] as $sf) {
+                                    if ($sf['is_hidden']) $sess_any_hidden = true;
+                                    else $sess_all_hidden = false;
+                                }
+                            ?>
+                                <div class="bg-white rounded-2xl shadow-sm border <?= $sess_all_hidden ? 'border-amber-300 ring-1 ring-amber-200' : 'border-slate-200' ?> overflow-hidden">
                                     <!-- Header Sesi -->
-                                    <div class="bg-slate-50 px-5 py-3.5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
-                                        <div class="flex items-center gap-2.5">
+                                    <div class="<?= $sess_all_hidden ? 'bg-amber-50/70' : 'bg-slate-50' ?> px-5 py-3.5 border-b <?= $sess_all_hidden ? 'border-amber-200' : 'border-slate-200' ?> flex flex-wrap items-center justify-between gap-3">
+                                        <div class="flex items-center gap-2.5 flex-wrap">
                                             <span class="bg-slate-800 text-white text-xs font-extrabold px-2.5 py-1 rounded-lg">
                                                 Sesi <?= count($sessions) - $idx ?>
                                             </span>
                                             <span class="text-xs font-semibold text-slate-600">
                                                 <?= count($sess['files']) ?> Media • 🕒 <?= date('d M Y, H:i:s', $sess['time']) ?>
                                             </span>
+                                            <?php if ($sess_all_hidden): ?>
+                                                <span class="bg-amber-500 text-white text-[11px] font-extrabold px-2.5 py-0.5 rounded-full shadow-sm">
+                                                    🙈 Sesi Disembunyikan
+                                                </span>
+                                            <?php elseif ($sess_any_hidden): ?>
+                                                <span class="bg-amber-100 text-amber-800 border border-amber-300 text-[11px] font-bold px-2 py-0.5 rounded-md">
+                                                    Sebagian Disembunyikan
+                                                </span>
+                                            <?php endif; ?>
                                         </div>
                                         <div class="flex items-center gap-1.5 flex-wrap">
                                             <button type="button" onclick="toggleSelectSession(<?= $idx ?>)" class="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold px-2.5 py-1.5 rounded-lg transition">
                                                 ☑️ Pilih Sesi
                                             </button>
-                                            <button type="submit" form="sessForm_<?= $idx ?>" name="hide_session" class="bg-amber-100 hover:bg-amber-200 text-amber-800 text-xs font-bold px-2.5 py-1.5 rounded-lg transition">
-                                                🙈 Sembunyikan Sesi
-                                            </button>
-                                            <button type="submit" form="sessForm_<?= $idx ?>" name="unhide_session" class="bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-xs font-bold px-2.5 py-1.5 rounded-lg transition">
-                                                👁️ Tampilkan Sesi
-                                            </button>
-                                            <button type="submit" form="sessForm_<?= $idx ?>" name="delete_session" onclick="return confirm('Hapus PERMANEN seluruh foto dalam Sesi ini?');" class="bg-red-100 hover:bg-red-200 text-red-700 text-xs font-bold px-2.5 py-1.5 rounded-lg transition">
-                                                🗑️ Hapus Sesi
-                                            </button>
+
+                                            <!-- Form Sembunyikan Sesi (Langsung & Mandiri Tanpa Form Bersarang) -->
+                                            <form method="POST" class="inline">
+                                                <input type="hidden" name="session_action" value="hide">
+                                                <input type="hidden" name="session_files" value="<?= $sess_json ?>">
+                                                <button type="submit" class="bg-amber-100 hover:bg-amber-200 text-amber-800 text-xs font-bold px-2.5 py-1.5 rounded-lg transition border border-amber-200">
+                                                    🙈 Sembunyikan Sesi
+                                                </button>
+                                            </form>
+
+                                            <!-- Form Tampilkan Sesi -->
+                                            <form method="POST" class="inline">
+                                                <input type="hidden" name="session_action" value="unhide">
+                                                <input type="hidden" name="session_files" value="<?= $sess_json ?>">
+                                                <button type="submit" class="bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-xs font-bold px-2.5 py-1.5 rounded-lg transition border border-emerald-200">
+                                                    👁️ Tampilkan Sesi
+                                                </button>
+                                            </form>
+
+                                            <!-- Form Hapus Sesi -->
+                                            <form method="POST" class="inline" onsubmit="return confirm('Hapus PERMANEN seluruh foto dalam Sesi ini?');">
+                                                <input type="hidden" name="session_action" value="delete">
+                                                <input type="hidden" name="session_files" value="<?= $sess_json ?>">
+                                                <button type="submit" class="bg-red-100 hover:bg-red-200 text-red-700 text-xs font-bold px-2.5 py-1.5 rounded-lg transition border border-red-200">
+                                                    🗑️ Hapus Sesi
+                                                </button>
+                                            </form>
                                         </div>
                                     </div>
 
@@ -764,13 +846,13 @@ $sessions = array_values($sessions_map);
                                     <div class="p-5 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                                         <?php foreach ($sess['files'] as $fd):
                                             $ih = $fd['is_hidden'];
-                                            $f_hash = md5($fd['file']);
                                             $is_vid = in_array($fd['ext'], ['mp4', 'mov', 'webm']);
+                                            $fd_file_escaped = htmlspecialchars($fd['file'], ENT_QUOTES, 'UTF-8');
                                         ?>
                                             <div class="media-card rounded-xl border <?= $ih ? 'border-amber-400 bg-amber-50/40' : 'border-slate-200 bg-white' ?> overflow-hidden shadow-sm flex flex-col justify-between relative group transition hover:shadow-md">
                                                 <!-- Checkbox Pilih Massal -->
                                                 <label class="absolute top-2.5 right-2.5 z-20 cursor-pointer bg-white/90 p-1 rounded-md shadow">
-                                                    <input type="checkbox" name="bulk_files[]" value="<?= htmlspecialchars($fd['file']) ?>" class="bulk-check sc_<?= $idx ?> w-5 h-5 accent-red-600 cursor-pointer block" onchange="updateBulkUI()">
+                                                    <input type="checkbox" value="<?= $fd_file_escaped ?>" class="bulk-check sc_<?= $idx ?> w-5 h-5 accent-red-600 cursor-pointer block" onchange="updateBulkUI()">
                                                 </label>
 
                                                 <!-- Badge Nama Sub-Folder (Prints / Animated / Singles) -->
@@ -797,18 +879,26 @@ $sessions = array_values($sessions_map);
                                                     <?php endif; ?>
                                                 </div>
 
-                                                <!-- Tombol Aksi Cepat per Foto -->
+                                                <!-- Tombol Aksi Cepat per Foto (Form Mandiri) -->
                                                 <div class="p-2.5 bg-white border-t border-slate-100 space-y-1.5">
                                                     <div class="text-[10px] text-slate-400 font-mono truncate" title="<?= htmlspecialchars(basename($fd['file'])) ?>">
                                                         <?= htmlspecialchars(basename($fd['file'])) ?>
                                                     </div>
                                                     <div class="flex gap-1.5">
-                                                        <button type="submit" form="singleForm_<?= $f_hash ?>" name="toggle_hide_file" class="flex-1 text-[11px] font-bold py-1.5 px-2 rounded-lg border transition <?= $ih ? 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-600 hover:text-white' : 'bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-500 hover:text-white' ?>">
-                                                            <?= $ih ? '👁️ Tampilkan' : '🙈 Sembunyikan' ?>
-                                                        </button>
-                                                        <button type="submit" form="singleForm_<?= $f_hash ?>" name="delete_single_file" onclick="return confirm('Hapus file ini secara permanen?');" class="text-[11px] font-bold py-1.5 px-2.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-600 hover:text-white transition" title="Hapus Permanen">
-                                                            🗑️
-                                                        </button>
+                                                        <form method="POST" class="flex-1">
+                                                            <input type="hidden" name="toggle_hide_file" value="1">
+                                                            <input type="hidden" name="filename" value="<?= $fd_file_escaped ?>">
+                                                            <button type="submit" class="w-full text-[11px] font-bold py-1.5 px-2 rounded-lg border transition <?= $ih ? 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-600 hover:text-white' : 'bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-500 hover:text-white' ?>">
+                                                                <?= $ih ? '👁️ Tampilkan' : '🙈 Sembunyikan' ?>
+                                                            </button>
+                                                        </form>
+                                                        <form method="POST" onsubmit="return confirm('Hapus file ini secara permanen?');">
+                                                            <input type="hidden" name="delete_single_file" value="1">
+                                                            <input type="hidden" name="filename" value="<?= $fd_file_escaped ?>">
+                                                            <button type="submit" class="text-[11px] font-bold py-1.5 px-2.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-600 hover:text-white transition" title="Hapus Permanen">
+                                                                🗑️
+                                                            </button>
+                                                        </form>
                                                     </div>
                                                 </div>
                                             </div>
@@ -816,23 +906,7 @@ $sessions = array_values($sessions_map);
                                     </div>
                                 </div>
                             <?php endforeach; ?>
-                        </form>
-
-                        <!-- Hidden Forms untuk Eksekusi Sesi & File Tunggal -->
-                        <?php foreach ($sessions as $idx => $sess):
-                            $s_files = array_map(function($i) { return $i['file']; }, $sess['files']);
-                        ?>
-                            <form method="POST" id="sessForm_<?= $idx ?>" class="hidden">
-                                <input type="hidden" name="session_files" value="<?= htmlspecialchars(json_encode($s_files)) ?>">
-                            </form>
-                            <?php foreach ($sess['files'] as $fd):
-                                $f_hash = md5($fd['file']);
-                            ?>
-                                <form method="POST" id="singleForm_<?= $f_hash ?>" class="hidden">
-                                    <input type="hidden" name="filename" value="<?= htmlspecialchars($fd['file']) ?>">
-                                </form>
-                            <?php endforeach; ?>
-                        <?php endforeach; ?>
+                        </div>
 
                         <!-- Zona Bahaya: Hapus Seluruh Media Event Ini -->
                         <div class="bg-red-50 border border-red-200 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
@@ -902,6 +976,24 @@ $sessions = array_values($sessions_map);
             const allChecked = Array.from(checks).every(c => c.checked);
             checks.forEach(c => c.checked = !allChecked);
             updateBulkUI();
+        }
+
+        function submitBulk(action) {
+            const checked = document.querySelectorAll('.bulk-check:checked');
+            if (checked.length === 0) return;
+            if (action === 'delete' && !confirm('Yakin ingin MENGHAPUS PERMANEN file yang dicentang?')) return;
+            const form = document.getElementById('bulkActionForm');
+            const container = document.getElementById('bulkFilesContainer');
+            container.innerHTML = '';
+            document.getElementById('bulkActionInput').value = action;
+            checked.forEach(c => {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'bulk_files[]';
+                input.value = c.value;
+                container.appendChild(input);
+            });
+            form.submit();
         }
 
         function openPreviewModal(src, type) {
