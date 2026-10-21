@@ -23,8 +23,7 @@ if (isset($headers['Authorization'])) {
 }
 
 if (!in_array($auth_token, $VALID_TOKENS, true)) {
-    http_response_code(401);
-    echo json_encode(["status" => "error", "message" => "Ditolak: Token keamanan tidak valid"]);
+    http_response_code(403);
     exit;
 }
 

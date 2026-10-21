@@ -29,11 +29,7 @@ function getRequestApiKey() {
 
 $req_key = getRequestApiKey();
 if ($req_key !== $API_SECRET_KEY) {
-    http_response_code(401);
-    echo json_encode([
-        'status' => 'error',
-        'message' => 'Unauthorized: Invalid API Key / PIN (Gunakan PIN Operator: 8080 atau yuhu8080)'
-    ]);
+    http_response_code(403);
     exit;
 }
 
