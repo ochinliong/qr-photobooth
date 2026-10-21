@@ -23,7 +23,10 @@ if (!$client) {
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $nama_client = $_POST['nama_client'];
     $lokasi = $_POST['lokasi'];
-    $link_galeri = $_POST['folder_foto_path'];
+    $link_galeri = trim($_POST['folder_foto_path'] ?? '');
+    if (empty($link_galeri)) {
+        $link_galeri = 'uploads/gallery/' . $client['slug'];
+    }
     $tanggal_event = $_POST['tanggal_event'];
     $jam_mulai = $_POST['jam_mulai'];
     $jam_selesai = $_POST['jam_selesai'];
@@ -70,7 +73,7 @@ $init_direct_link = rtrim($base_url, '/') . '/' . $init_year . '/' . $init_clean
     <title>Edit Klien - Admin</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+<body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
     <div class="bg-white p-8 rounded-lg shadow-md w-full max-w-2xl">
         <h2 class="text-2xl font-bold mb-6 text-gray-800">Edit Klien</h2>
         <form method="POST" action="" class="space-y-4">
@@ -83,9 +86,14 @@ $init_direct_link = rtrim($base_url, '/') . '/' . $init_year . '/' . $init_clean
                 <textarea name="lokasi" required class="mt-1 w-full px-3 py-2 border rounded-md focus:border-blue-500 focus:outline-none" rows="2"><?= htmlspecialchars($client['lokasi'] ?? '') ?></textarea>
             </div>
             <div>
-                <label class="block text-sm font-medium text-gray-700">Link Galeri (Tujuan Akhir / Folder Foto)</label>
-                <input type="url" name="folder_foto_path" value="<?= htmlspecialchars($client['folder_foto_path']) ?>" required class="mt-1 w-full px-3 py-2 border rounded-md focus:border-blue-500 focus:outline-none">
-                <p class="text-xs text-blue-600 mt-1.5 font-medium" id="preview_direct_link">
+                <label class="block text-sm font-medium text-gray-700">Tujuan Galeri (Kosongkan untuk Portal Gallery LumaBooth)</label>
+                <input type="text" name="folder_foto_path" id="input_folder" value="<?= htmlspecialchars($client['folder_foto_path']) ?>" placeholder="Kosongkan untuk Galeri Internal: uploads/gallery/<?= htmlspecialchars($client['slug']) ?>" class="mt-1 w-full px-3 py-2 border rounded-md focus:border-blue-500 focus:outline-none">
+                <div class="mt-1.5 flex items-center gap-2">
+                    <button type="button" onclick="document.getElementById('input_folder').value = 'uploads/gallery/<?= htmlspecialchars($client['slug']) ?>'" class="text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded font-semibold hover:bg-emerald-100">
+                        Gunakan Portal Gallery Website Ini (LumaBooth Sync)
+                    </button>
+                </div>
+                <p class="text-xs text-blue-600 mt-2 font-medium" id="preview_direct_link">
                     🔗 Link QR Otomatis: <span class="underline font-mono"><?= htmlspecialchars($init_direct_link) ?></span>
                 </p>
                 <p class="text-xs text-orange-600 mt-1">Saat disimpan, QR Code akan otomatis diperbarui mengikuti Link QR Otomatis di atas.</p>
