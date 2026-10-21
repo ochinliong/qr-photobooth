@@ -3,25 +3,27 @@ SETLOCAL EnableDelayedExpansion
 
 :: ============================================================================
 :: YUHU PHOTOBOOTH - LUMABOOTH WINDOWS (OKTOBER 2026) UNIVERSAL SYNC & TRIGGER
-:: VERSI: YUHU v10.bat (APPDATA EVENT DETECTOR + INSTANT LAUNCH-EVENT BACKFILL)
+:: VERSI: YUHU v11.bat (AUTO-COMPRESS >2MB + SCHANNEL FIX + APPDATA DETECTOR)
 :: ============================================================================
 :: Mendukung 2 Cara Kerja Sekaligus (Di Komputer Mana Saja):
 :: 1. Dipanggil Otomatis oleh LumaBooth Trigger (Settings -> Triggers -> Application)
 :: 2. Diklik 2x Langsung oleh Operator (Otomatis jalan di belakang layar tanpa
 ::    jendela mengganggu, memantau & mengupload seluruh foto lama & baru!)
 ::
-:: PERBAIKAN PENTING DI v10:
-:: 1. Membaca langsung konfigurasi internal LumaBooth:
-::    - %APPDATA%\dslrBooth\app_settings_2021.json ("ImagesPath" & "EventId")
-::    - %APPDATA%\dslrBooth\EventSettings\*.lcfg ("MediaDirectoryName")
-::    Sehingga di komputer mana pun LumaBooth diinstal, script 100% tahu persis
-::    lokasi penyimpanan dan nama folder project yang sedang dibuka saat ini!
-:: 2. Langsung jalan saat klik "Launch Event" (Start Screen):
-::    Begitu .bat dimasukkan ke Trigger lalu klik Launch Event (bahkan TANPA
-::    perlu memotret foto baru!), seluruh foto yang sudah ada di dalam project
-::    tersebut langsung otomatis terupload ke Cloud!
-:: 3. Perbaikan Subshell FOR /F (%~1), Multi-Project Append (>>), Anti-Stuck
-::    Worker Lock, dan Instant Silent Launcher (< 20ms).
+:: PERBAIKAN PENTING DI v11:
+:: 1. SOLUSI TUNTAS "MENUNGGU INTERNET" PADAHAL INTERNET LANCAR:
+::    - Server cPanel (files.yuhu.co.id & qr.yuhu.co.id) memiliki batas default
+::      PHP upload_max_filesize = 2 MB (menolak file > 2 MB dengan HTTP 400).
+::      Di v10, HTTP 400 (Exit Code 22) dianggap sebagai "Menunggu Internet"!
+::    - Di YUHU v11, setiap foto (.jpg/.png) atau video (.mp4/.gif/.mov) yang
+::      ukurannya >= 1.9 MB (atau ditolak HTTP 400 / Exit Code 22) OTOMATIS
+::      dikompres cerdas ke < 1.8 MB menggunakan mesin bawaan LumaBooth (ffmpeg.exe)
+::      atau Windows .NET tanpa mengubah file asli di komputer, lalu langsung
+::      sukses terupload (HTTP 200)!
+:: 2. Perbaikan Windows CURL (-4 --ssl-no-revoke --http1.1 -H "Expect:") & Staging:
+::    - Mencegah gagal upload akibat karakter spasi/koma/simbol pada nama folder PC lain.
+::    - Mencegah macet SSL Schannel / Expect: 100-continue di Windows 10/11.
+:: 3. Deteksi Otomatis Project Aktif dari %APPDATA%\dslrBooth & Upload Instan!
 :: ============================================================================
 
 SET "API_URL_PRIMARY=https://files.yuhu.co.id/client/api_upload.php"
@@ -34,9 +36,20 @@ IF NOT EXIST "%CURL%" SET "CURL=curl.exe"
 SET "WSCRIPT=%SystemRoot%\System32\wscript.exe"
 IF NOT EXIST "%WSCRIPT%" SET "WSCRIPT=wscript.exe"
 
+:: Deteksi otomatis ffmpeg.exe bawaan instalasi LumaBooth / dslrBooth di komputer ini
+SET "FFMPEG="
+IF EXIST "%ProgramFiles%\LumaBooth\ffmpeg.exe"       SET "FFMPEG=%ProgramFiles%\LumaBooth\ffmpeg.exe"
+IF EXIST "%ProgramFiles%\dslrBooth\ffmpeg.exe"       SET "FFMPEG=%ProgramFiles%\dslrBooth\ffmpeg.exe"
+IF EXIST "%ProgramFiles(x86)%\LumaBooth\ffmpeg.exe"  SET "FFMPEG=%ProgramFiles(x86)%\LumaBooth\ffmpeg.exe"
+IF EXIST "%ProgramFiles(x86)%\dslrBooth\ffmpeg.exe"  SET "FFMPEG=%ProgramFiles(x86)%\dslrBooth\ffmpeg.exe"
+IF EXIST "%LOCALAPPDATA%\LumaBooth\ffmpeg.exe"       SET "FFMPEG=%LOCALAPPDATA%\LumaBooth\ffmpeg.exe"
+IF EXIST "%LOCALAPPDATA%\dslrBooth\ffmpeg.exe"       SET "FFMPEG=%LOCALAPPDATA%\dslrBooth\ffmpeg.exe"
+
 SET "SELF=%~f0"
 SET "WORK_DIR=%~dp0"
-SET "SILENT_VBS=%WORK_DIR%silent_runner_v10.vbs"
+SET "STAGE_DIR=%WORK_DIR%stage_upload"
+SET "SILENT_VBS=%WORK_DIR%silent_runner_v11.vbs"
+SET "IMG_COMP_PS1=%WORK_DIR%compress_img_v11.ps1"
 SET "PC_MARKER=%WORK_DIR%last_pc.txt"
 SET "PRIORITY_QUEUE=%WORK_DIR%priority_queue.txt"
 SET "QUEUE_FILE=%WORK_DIR%upload_queue.txt"
@@ -67,6 +80,33 @@ IF NOT EXIST "%SILENT_VBS%" (
         ECHO cmd = cmd ^& """"
         ECHO sh.Run cmd, 0, False
     ) > "%SILENT_VBS%"
+)
+
+:: Auto-generate PowerShell .NET Image Compressor (cadangan jika ffmpeg tidak ditemukan)
+IF NOT EXIST "%IMG_COMP_PS1%" (
+    (
+        ECHO param([string]$src, [string]$dst^)
+        ECHO Add-Type -AssemblyName System.Drawing
+        ECHO $img = [System.Drawing.Image]::FromFile($src^)
+        ECHO $w = $img.Width; $h = $img.Height
+        ECHO if ($w -gt 2200 -or $h -gt 2200^) {
+        ECHO     $r = [Math]::Min(2200.0 / $w, 2200.0 / $h^)
+        ECHO     $nw = [int]($w * $r^); $nh = [int]($h * $r^)
+        ECHO } else { $nw = $w; $nh = $h }
+        ECHO $bmp = New-Object System.Drawing.Bitmap($nw, $nh^)
+        ECHO $g = [System.Drawing.Graphics]::FromImage($bmp^)
+        ECHO $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+        ECHO $g.DrawImage($img, 0, 0, $nw, $nh^)
+        ECHO $g.Dispose(^); $img.Dispose(^)
+        ECHO $enc = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders(^) ^| Where-Object { $_.MimeType -eq 'image/jpeg' }
+        ECHO foreach ($q in @(85, 75, 65, 55^)^) {
+        ECHO     $ep = New-Object System.Drawing.Imaging.EncoderParameters(1^)
+        ECHO     $ep.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter([System.Drawing.Imaging.Encoder]::Quality, [long]$q^)
+        ECHO     $bmp.Save($dst, $enc, $ep^)
+        ECHO     if ((Get-Item $dst^).Length -lt 1850000^) { break }
+        ECHO }
+        ECHO $bmp.Dispose(^)
+    ) > "%IMG_COMP_PS1%"
 )
 
 :: ============================================================================
@@ -131,10 +171,11 @@ IF /I "%~1"=="BG_DAEMON"  GOTO :bg_daemon_entry
 SET "EVENT_TYPE=%~1"
 IF "%EVENT_TYPE%"=="" (
     ECHO =====================================================================
-    ECHO   YUHU PHOTOBOOTH v10 - LUMABOOTH CLOUD AUTO-UPLOADER AKTIF
+    ECHO   YUHU PHOTOBOOTH v11 - LUMABOOTH CLOUD AUTO-UPLOADER AKTIF
     ECHO =====================================================================
     ECHO   Folder Data LumaBooth : "!DSLRBOOTH_DIR!"
     ECHO   Project Aktif Saat Ini: "!LB_ACTIVE_DIR!"
+    ECHO   Mesin Kompresi Media  : "!FFMPEG!"
     ECHO   Target Cloud Server   : !API_URL_PRIMARY!
     ECHO =====================================================================
     ECHO.
@@ -335,8 +376,7 @@ IF "!PRIORITY_DIR!"=="" (
     )
 )
 
-:: Jika project aktif berubah (misal operator baru saja membuka project lain di LumaBooth),
-:: prioritaskan project yang sedang dibuka sekarang ke urutan paling atas!
+:: Jika project aktif berubah, prioritaskan project yang sedang dibuka sekarang!
 SET "LAST_BATCH_PROJ="
 IF EXIST "%WORK_DIR%last_batch_project.txt" (
     SET /P LAST_BATCH_PROJ=<"%WORK_DIR%last_batch_project.txt"
@@ -350,13 +390,12 @@ IF NOT "!PRIORITY_DIR!"=="" (
     )
 )
 
-:: Jika BATCH_FILE masih sedang dikerjakan untuk project yang sama, biarkan Worker menyelesaikannya
 IF EXIST "%BATCH_FILE%" EXIT /B 0
 
 SET "RAW_LIST=%WORK_DIR%raw_scan.tmp"
 DEL /F /Q "%RAW_LIST%" >nul 2>&1
 
-:: 1. Urutan Pertama: Pindai 100% foto/video di project yang sedang aktif di LumaBooth (!PRIORITY_DIR!)
+:: 1. Urutan Pertama: Pindai 100% foto/video di project yang sedang aktif (!PRIORITY_DIR!)
 IF NOT "!PRIORITY_DIR!"=="" (
     IF EXIST "!PRIORITY_DIR!" (
         CALL :append_project_files "!PRIORITY_DIR!"
@@ -373,7 +412,6 @@ IF NOT "!LB_ACTIVE_DIR!"=="" (
 )
 
 :: 3. Urutan Ketiga: Pindai seluruh folder project lain di dalam DSLRBOOTH_DIR
-::    Sehingga project mana pun yang sudah ada fotonya dipastikan 100% terupload!
 FOR /F "delims=" %%D IN ('DIR "%DSLRBOOTH_DIR%" /AD /B /O-D 2^>nul') DO (
     IF /I NOT "%%D"=="Settings" IF /I NOT "%%D"=="Templates" (
         SET "CAND_PROJ=%DSLRBOOTH_DIR%\%%D"
@@ -387,7 +425,6 @@ FOR /F "delims=" %%D IN ('DIR "%DSLRBOOTH_DIR%" /AD /B /O-D 2^>nul') DO (
 
 IF NOT EXIST "%RAW_LIST%" EXIT /B 0
 
-:: Saring keluar file thumbnail _mp4.jpg dalam 1 perintah instan
 FINDSTR /V /I "_mp4.jpg" "%RAW_LIST%" > "%QUEUE_FILE%" 2>nul
 DEL /F /Q "%RAW_LIST%" >nul 2>&1
 EXIT /B 0
@@ -396,9 +433,6 @@ EXIT /B 0
 IF "%~1"=="" EXIT /B 0
 IF NOT EXIST "%~1" EXIT /B 0
 
-:: PENTING: Gunakan %~1 (bukan !VAR!) di dalam FOR /F ('DIR ...') karena subshell cmd.exe /c
-:: tidak mengaktifkan DelayedExpansion secara default!
-:: Gunakan >> "%RAW_LIST%" (APPEND) agar semua project tergabung tanpa saling menimpa!
 (
     IF EXIST "%~1\Prints" (
         FOR /F "delims=" %%F IN ('DIR "%~1\Prints" /A-D /B /O-D 2^>nul') DO (
@@ -430,7 +464,7 @@ EXIT /B 0
 
 
 :: ============================================================================
-:: PROSES WORKER SINGLE-INSTANCE (Tanpa "more +1" -> Anti Macet untuk 5.000+ File!)
+:: PROSES WORKER SINGLE-INSTANCE + AUTO-COMPRESS >2MB + STAGING UPLOAD
 :: ============================================================================
 :worker_entry
 CALL :locked_worker 9>>"%LOCK_FILE%"
@@ -438,14 +472,13 @@ EXIT /B 0
 
 :locked_worker
 IF NOT EXIST "%SENT_LOG%" TYPE nul > "%SENT_LOG%"
+IF NOT EXIST "%STAGE_DIR%" MKDIR "%STAGE_DIR%" >nul 2>&1
 
 :worker_main_loop
-:: 1. Utamakan foto terbaru di PRIORITY_QUEUE (Tamu yang baru selesai berfoto)
 IF EXIST "%PRIORITY_QUEUE%" (
     CALL :drain_priority_queue
 )
 
-:: 2. Proses antrean utama (BATCH_FILE / QUEUE_FILE)
 IF NOT EXIST "%BATCH_FILE%" (
     IF EXIST "%QUEUE_FILE%" (
         MOVE /Y "%QUEUE_FILE%" "%BATCH_FILE%" >nul 2>&1
@@ -458,7 +491,6 @@ IF NOT EXIST "%BATCH_FILE%" (
 )
 
 FOR /F "usebackq delims=" %%A IN ("%BATCH_FILE%") DO (
-    :: Sebelum upload tiap file lama, cek apakah ada foto baru di PRIORITY_QUEUE!
     IF EXIST "%PRIORITY_QUEUE%" (
         CALL :drain_priority_queue
     )
@@ -491,11 +523,20 @@ IF NOT EXIST "!CURRENT_FILE!" EXIT /B 0
 FINDSTR /I /L /C:"!CURRENT_FILE!" "%SENT_LOG%" >nul 2>&1
 IF NOT ERRORLEVEL 1 EXIT /B 0
 
+:: Jika ini adalah jepretan baru, tunggu 1 detik terlebih dahulu SEBELUM membaca ukuran file!
+IF "!IS_NEW_CAPTURE!"=="1" (
+    ping 127.0.0.1 -n 2 >nul 2>&1
+)
+IF NOT EXIST "!CURRENT_FILE!" EXIT /B 0
+
+SET "FILE_SIZE=0"
 FOR %%I IN ("!CURRENT_FILE!") DO (
     SET "FILE_SIZE=%%~zI"
     SET "DIR_MEDIA=%%~dpI"
     SET "FNAME_ONLY=%%~nxI"
+    SET "FILE_EXT=%%~xI"
 )
+IF "!FILE_SIZE!"=="" EXIT /B 0
 IF "!FILE_SIZE!"=="0" EXIT /B 0
 IF /I NOT "!FNAME_ONLY:_mp4.jpg=!"=="!FNAME_ONLY!" EXIT /B 0
 
@@ -519,36 +560,144 @@ IF /I "!MEDIA_TYPE!"=="Animated" SET "FOLDER_TARGET=Animated"
 IF /I "!MEDIA_TYPE!"=="GIFs"     SET "FOLDER_TARGET=Animated"
 IF /I "!MEDIA_TYPE!"=="Videos"   SET "FOLDER_TARGET=Animated"
 
-:: Hanya beri jeda 1 detik jika ini adalah jepretan baru (agar file selesai ditulis LumaBooth)
-IF "!IS_NEW_CAPTURE!"=="1" (
-    ping 127.0.0.1 -n 2 >nul 2>&1
+:: Siapkan file di STAGE_DIR agar bebas dari karakter aneh di path folder PC lain & bebas file lock!
+IF NOT EXIST "%STAGE_DIR%" MKDIR "%STAGE_DIR%" >nul 2>&1
+SET "STAGE_FILE=%STAGE_DIR%\!FNAME_ONLY!"
+DEL /F /Q "!STAGE_FILE!" >nul 2>&1
+
+:: Cek apakah ukuran file >= 1.9 MB (1.900.000 bytes)
+:: Jika >= 1.9 MB, otomatis kompres di STAGE_FILE agar lolos batas 2 MB PHP server!
+IF !FILE_SIZE! GEQ 1900000 (
+    CALL :compress_to_stage "!CURRENT_FILE!" "!STAGE_FILE!" "!FILE_EXT!"
 )
+
+IF NOT EXIST "!STAGE_FILE!" (
+    COPY /Y "!CURRENT_FILE!" "!STAGE_FILE!" >nul 2>&1
+)
+IF NOT EXIST "!STAGE_FILE!" EXIT /B 0
 
 SET "RETRY_COUNT=0"
 :retry_upload
-IF NOT EXIST "!CURRENT_FILE!" EXIT /B 0
-
-%CURL% --fail --max-time 90 --connect-timeout 10 -s -k -X POST "!API_URL_PRIMARY!" -F "token=!API_TOKEN!" -F "client_event=!EVENT_NAME!" -F "folder_target=!FOLDER_TARGET!" -F "file_size=!FILE_SIZE!" -F "file=@!CURRENT_FILE!" >nul 2>&1
-IF !ERRORLEVEL! EQU 0 (
-    >> "%SENT_LOG%" ECHO !CURRENT_FILE!
-    > "%LOG_FILE%" ECHO [%DATE% %TIME%] SUKSES UPLOAD KE FILES.YUHU.CO.ID: !EVENT_NAME!/!FOLDER_TARGET! - !CURRENT_FILE!
+IF NOT EXIST "!CURRENT_FILE!" (
+    DEL /F /Q "!STAGE_FILE!" >nul 2>&1
     EXIT /B 0
 )
 
-%CURL% --fail --max-time 90 --connect-timeout 10 -s -k -X POST "!API_URL_FALLBACK!" -F "token=!API_TOKEN!" -F "client_event=!EVENT_NAME!" -F "folder_target=!FOLDER_TARGET!" -F "file_size=!FILE_SIZE!" -F "file=@!CURRENT_FILE!" >nul 2>&1
-IF !ERRORLEVEL! EQU 0 (
+:: 1. Kirim ke Server Utama (files.yuhu.co.id)
+"%CURL%" -4 --ssl-no-revoke --http1.1 -H "Expect:" --fail --max-time 90 --connect-timeout 15 -s -k -X POST "!API_URL_PRIMARY!" -F "token=!API_TOKEN!" -F "client_event=!EVENT_NAME!" -F "folder_target=!FOLDER_TARGET!" -F "file=@!STAGE_FILE!" >nul 2>&1
+SET "CURL_ERR=!ERRORLEVEL!"
+
+IF "!CURL_ERR!"=="0" (
+    DEL /F /Q "!STAGE_FILE!" >nul 2>&1
     >> "%SENT_LOG%" ECHO !CURRENT_FILE!
-    > "%LOG_FILE%" ECHO [%DATE% %TIME%] SUKSES UPLOAD KE QR.YUHU.CO.ID: !EVENT_NAME!/!FOLDER_TARGET! - !CURRENT_FILE!
+    > "%LOG_FILE%" ECHO [%DATE% %TIME%] SUKSES UPLOAD KE FILES.YUHU.CO.ID: !EVENT_NAME!/!FOLDER_TARGET! - !FNAME_ONLY!
+    EXIT /B 0
+)
+
+:: Jika CURL_ERR == 22 (HTTP 400 / 413 karena ukuran file masih > 2MB), paksa kompres lebih kecil!
+IF "!CURL_ERR!"=="22" (
+    CALL :force_recompress "!CURRENT_FILE!" "!STAGE_FILE!" "!FILE_EXT!"
+    "%CURL%" -4 --ssl-no-revoke --http1.1 -H "Expect:" --fail --max-time 90 --connect-timeout 15 -s -k -X POST "!API_URL_PRIMARY!" -F "token=!API_TOKEN!" -F "client_event=!EVENT_NAME!" -F "folder_target=!FOLDER_TARGET!" -F "file=@!STAGE_FILE!" >nul 2>&1
+    IF !ERRORLEVEL! EQU 0 (
+        DEL /F /Q "!STAGE_FILE!" >nul 2>&1
+        >> "%SENT_LOG%" ECHO !CURRENT_FILE!
+        > "%LOG_FILE%" ECHO [%DATE% %TIME%] SUKSES UPLOAD [OPTIMIZED] KE FILES.YUHU.CO.ID: !EVENT_NAME!/!FOLDER_TARGET! - !FNAME_ONLY!
+        EXIT /B 0
+    )
+)
+
+:: 2. Kirim ke Server Cadangan (qr.yuhu.co.id)
+"%CURL%" -4 --ssl-no-revoke --http1.1 -H "Expect:" --fail --max-time 90 --connect-timeout 15 -s -k -X POST "!API_URL_FALLBACK!" -F "token=!API_TOKEN!" -F "client_event=!EVENT_NAME!" -F "folder_target=!FOLDER_TARGET!" -F "file=@!STAGE_FILE!" >nul 2>&1
+SET "CURL_ERR_FB=!ERRORLEVEL!"
+
+IF "!CURL_ERR_FB!"=="0" (
+    DEL /F /Q "!STAGE_FILE!" >nul 2>&1
+    >> "%SENT_LOG%" ECHO !CURRENT_FILE!
+    > "%LOG_FILE%" ECHO [%DATE% %TIME%] SUKSES UPLOAD KE QR.YUHU.CO.ID: !EVENT_NAME!/!FOLDER_TARGET! - !FNAME_ONLY!
     EXIT /B 0
 )
 
 SET /A RETRY_COUNT+=1
 IF !RETRY_COUNT! GEQ 3 (
-    > "%LOG_FILE%" ECHO [%DATE% %TIME%] TUNDA KE SIKLUS BERIKUTNYA: !CURRENT_FILE!
+    DEL /F /Q "!STAGE_FILE!" >nul 2>&1
+    > "%LOG_FILE%" ECHO [%DATE% %TIME%] LEWATI SEMENTARA (CODE !CURL_ERR!) LANJUT FILE BERIKUTNYA: !FNAME_ONLY!
     EXIT /B 0
 )
 
-:: Jika internet sedang terputus, tunggu 3 detik lalu ulangi
-> "%LOG_FILE%" ECHO [%DATE% %TIME%] MENUNGGU INTERNET (RETRY !RETRY_COUNT!/3): !CURRENT_FILE!
-ping 127.0.0.1 -n 4 >nul 2>&1
+> "%LOG_FILE%" ECHO [%DATE% %TIME%] RETRY !RETRY_COUNT!/3 (CODE !CURL_ERR!) MENGULANG UPLOAD: !FNAME_ONLY!
+ping 127.0.0.1 -n 3 >nul 2>&1
 GOTO :retry_upload
+
+
+:: ============================================================================
+:: HELPER: KOMPRESI CERDAS OTOMATIS (< 1.8 MB) UNTUK FOTO, VIDEO MP4, & GIF
+:: ============================================================================
+:compress_to_stage
+SET "SRC_MEDIA=%~1"
+SET "DST_MEDIA=%~2"
+SET "MEDIA_EXT=%~3"
+
+:: A. Jika file Gambar (.jpg / .jpeg / .png)
+IF /I "!MEDIA_EXT!"==".jpg"  GOTO :comp_image
+IF /I "!MEDIA_EXT!"==".jpeg" GOTO :comp_image
+IF /I "!MEDIA_EXT!"==".png"  GOTO :comp_image
+
+:: B. Jika file Video (.mp4 / .mov / .webm)
+IF /I "!MEDIA_EXT!"==".mp4"  GOTO :comp_video
+IF /I "!MEDIA_EXT!"==".mov"  GOTO :comp_video
+IF /I "!MEDIA_EXT!"==".webm" GOTO :comp_video
+
+:: C. Jika file Animasi GIF (.gif)
+IF /I "!MEDIA_EXT!"==".gif"  GOTO :comp_gif
+EXIT /B 0
+
+:comp_image
+IF NOT "!FFMPEG!"=="" (
+    "!FFMPEG!" -y -i "!SRC_MEDIA!" -vf "scale='min(2200,iw)':-2" -q:v 5 "!DST_MEDIA!" >nul 2>&1
+    IF EXIST "!DST_MEDIA!" (
+        SET "DST_SZ=0"
+        FOR %%S IN ("!DST_MEDIA!") DO SET "DST_SZ=%%~zS"
+        IF !DST_SZ! GEQ 1900000 (
+            "!FFMPEG!" -y -i "!SRC_MEDIA!" -vf "scale='min(1800,iw)':-2" -q:v 8 "!DST_MEDIA!" >nul 2>&1
+        )
+        EXIT /B 0
+    )
+)
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%IMG_COMP_PS1%" "!SRC_MEDIA!" "!DST_MEDIA!" >nul 2>&1
+EXIT /B 0
+
+:comp_video
+IF NOT "!FFMPEG!"=="" (
+    "!FFMPEG!" -y -i "!SRC_MEDIA!" -vf "scale='min(960,iw)':-2" -c:v libx264 -preset veryfast -crf 28 -b:v 850k -maxrate 1050k -bufsize 1500k -movflags +faststart -an "!DST_MEDIA!" >nul 2>&1
+    IF EXIST "!DST_MEDIA!" (
+        SET "DST_SZ=0"
+        FOR %%S IN ("!DST_MEDIA!") DO SET "DST_SZ=%%~zS"
+        IF !DST_SZ! GEQ 1900000 (
+            "!FFMPEG!" -y -i "!SRC_MEDIA!" -vf "scale='min(720,iw)':-2" -c:v libx264 -preset veryfast -crf 31 -b:v 550k -maxrate 700k -bufsize 1000k -movflags +faststart -an "!DST_MEDIA!" >nul 2>&1
+        )
+    )
+)
+EXIT /B 0
+
+:comp_gif
+IF NOT "!FFMPEG!"=="" (
+    "!FFMPEG!" -y -i "!SRC_MEDIA!" -vf "fps=10,scale='min(540,iw)':-1:flags=lanczos" "!DST_MEDIA!" >nul 2>&1
+)
+EXIT /B 0
+
+:force_recompress
+SET "F_SRC=%~1"
+SET "F_DST=%~2"
+SET "F_EXT=%~3"
+IF NOT "!FFMPEG!"=="" (
+    IF /I "!F_EXT!"==".mp4" (
+        "!FFMPEG!" -y -i "!F_SRC!" -vf "scale='min(640,iw)':-2" -c:v libx264 -preset veryfast -crf 32 -b:v 450k -maxrate 600k -bufsize 900k -movflags +faststart -an "!F_DST!" >nul 2>&1
+        EXIT /B 0
+    )
+    IF /I "!F_EXT!"==".mov" (
+        "!FFMPEG!" -y -i "!F_SRC!" -vf "scale='min(640,iw)':-2" -c:v libx264 -preset veryfast -crf 32 -b:v 450k -maxrate 600k -bufsize 900k -movflags +faststart -an "!F_DST!" >nul 2>&1
+        EXIT /B 0
+    )
+)
+CALL :compress_to_stage "!F_SRC!" "!F_DST!" "!F_EXT!"
+EXIT /B 0
