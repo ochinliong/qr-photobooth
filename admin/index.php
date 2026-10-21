@@ -160,16 +160,29 @@ function countLocalPhotos($c) {
     <title>Admin Dashboard - YUHU Photobooth</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-gray-100">
-    <nav class="bg-white shadow-md p-4">
-        <div class="container mx-auto flex justify-between items-center">
-            <div class="flex items-center gap-3">
-                <h1 class="text-xl font-bold text-gray-800">Photobooth Admin</h1>
-                <span class="bg-emerald-100 text-emerald-700 text-xs font-bold px-2.5 py-1 rounded-full">LumaBooth Windows 2026 Ready</span>
+<body class="bg-slate-100">
+    <!-- Top Navigation Bar Terpadu -->
+    <nav class="bg-white shadow-sm border-b border-slate-200 sticky top-0 z-40">
+        <div class="container mx-auto px-4 py-3 flex flex-wrap justify-between items-center gap-3">
+            <div class="flex items-center gap-6">
+                <a href="index.php" class="flex items-center gap-2.5">
+                    <img src="https://qr.yuhu.co.id/2025/icon.png" class="w-8 h-8 rounded-lg shadow-sm" alt="Logo">
+                    <span class="text-lg font-extrabold text-slate-900 tracking-tight">YUHU <span class="text-blue-600">Admin</span></span>
+                </a>
+                <!-- Menu Tab Terpadu -->
+                <div class="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+                    <a href="index.php" class="px-3.5 py-1.5 rounded-lg text-xs md:text-sm font-bold bg-blue-600 text-white shadow-sm transition">
+                        📋 Daftar Klien & QR
+                    </a>
+                    <a href="gallery.php" class="px-3.5 py-1.5 rounded-lg text-xs md:text-sm font-semibold text-slate-600 hover:text-slate-900 transition">
+                        🖼️ Kelola Foto & Galeri
+                    </a>
+                </div>
             </div>
-            <div>
-                <a href="change_password.php" class="text-blue-600 hover:underline mr-4">Ganti Password</a>
-                <a href="logout.php" class="text-red-600 hover:underline">Logout</a>
+            <div class="flex items-center gap-4 text-sm font-medium">
+                <a href="../" target="_blank" class="text-slate-600 hover:text-blue-600">Lihat Live Portal ↗</a>
+                <a href="change_password.php" class="text-blue-600 hover:underline">Ganti Password</a>
+                <a href="logout.php" class="text-red-600 hover:underline font-semibold">Logout</a>
             </div>
         </div>
     </nav>
@@ -256,9 +269,12 @@ function countLocalPhotos($c) {
                         <tr>
                             <td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900">
                                 <?= htmlspecialchars($c['nama_client']) ?>
-                                <div class="mt-1 flex items-center gap-1.5 flex-wrap">
-                                    <a href="<?= htmlspecialchars($internal_gallery_url) ?>" target="_blank" class="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full <?= $photo_count > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600' ?>">
-                                        📷 <?= $photo_count ?> File di Portal Gallery
+                                <div class="mt-1.5 flex items-center gap-1.5 flex-wrap">
+                                    <a href="gallery.php?id=<?= $c['id'] ?>" class="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full <?= $photo_count > 0 ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' : 'bg-gray-100 text-gray-600 hover:bg-gray-200' ?>">
+                                        🖼️ Kelola <?= $photo_count ?> Foto
+                                    </a>
+                                    <a href="<?= htmlspecialchars($internal_gallery_url) ?>" target="_blank" class="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 hover:bg-emerald-100">
+                                        👁️ Lihat Galeri ↗
                                     </a>
                                     <?php if ($is_auto_lokasi): ?>
                                         <a href="edit.php?id=<?= $c['id'] ?>" class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 hover:bg-amber-200">
@@ -295,9 +311,12 @@ function countLocalPhotos($c) {
                             <td class="px-6 py-4 whitespace-nowrap">
                                 <a href="<?= '../' . $c['qr_code_path'] ?>" target="_blank" class="text-blue-600 hover:underline font-medium">Lihat QR</a>
                             </td>
-                            <td class="px-6 py-4 whitespace-nowrap">
-                                <a href="edit.php?id=<?= $c['id'] ?>" class="text-indigo-600 hover:underline mr-3">Edit</a>
-                                <a href="?delete=<?= $c['id'] ?>" onclick="return confirm('Yakin ingin menghapus?')" class="text-red-600 hover:underline">Hapus</a>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold space-x-2">
+                                <a href="gallery.php?id=<?= $c['id'] ?>" class="inline-flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm transition">
+                                    🖼️ Kelola Foto
+                                </a>
+                                <a href="edit.php?id=<?= $c['id'] ?>" class="inline-flex items-center bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 transition">Edit Info</a>
+                                <a href="?delete=<?= $c['id'] ?>" onclick="return confirm('Yakin ingin menghapus?')" class="inline-flex items-center bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold px-2.5 py-1.5 rounded-lg border border-red-200 transition">Hapus</a>
                             </td>
                         </tr>
                         <?php endforeach; ?>

@@ -122,9 +122,14 @@ $init_direct_link = rtrim($base_url, '/') . '/' . $init_year . '/' . $init_clean
                     <input type="time" name="jam_selesai" value="<?= $client['jam_selesai'] ?>" required class="mt-1 w-full px-3 py-2 border rounded-md focus:border-blue-500 focus:outline-none">
                 </div>
             </div>
-            <div class="flex justify-end space-x-3 pt-6">
-                <a href="index.php" class="bg-gray-300 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-400 font-medium">Batal</a>
-                <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 font-medium">Simpan Perubahan</button>
+            <div class="flex flex-wrap items-center justify-between gap-3 pt-6">
+                <a href="gallery.php?id=<?= $client['id'] ?>" class="bg-emerald-50 text-emerald-700 border border-emerald-200 px-4 py-2 rounded-md hover:bg-emerald-100 font-semibold text-sm">
+                    🖼️ Kelola Foto Galeri Acara Ini
+                </a>
+                <div class="flex space-x-3">
+                    <a href="index.php" class="bg-gray-300 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-400 font-medium">Batal</a>
+                    <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 font-medium">Simpan Perubahan</button>
+                </div>
             </div>
         </form>
     </div>

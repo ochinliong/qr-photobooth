@@ -339,12 +339,12 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
 
     <script src="script.js"></script>
     <script>
-        // Auto-Sync Real-time setiap 8 detik: otomatis memunculkan foto baru dari LumaBooth tanpa refresh
+        // Auto-Sync Real-time setiap 8 detik: otomatis memunculkan foto baru atau menyembunyikan foto yang di-hide Admin tanpa refresh
         setInterval(async () => {
             try {
-                const res = await fetch(`?client=<?php echo rawurlencode($resolved_folder); ?>&ajax=1`);
+                const res = await fetch(`index.php?client=<?php echo rawurlencode($resolved_folder); ?>&ajax=1`);
                 const data = await res.json();
-                if (data.total_files !== totalFilesCount) {
+                if (JSON.stringify(data.sessions) !== JSON.stringify(gallerySessions)) {
                     totalFilesCount = data.total_files;
                     gallerySessions = data.sessions;
                     const grid = document.getElementById('masonryGrid');
