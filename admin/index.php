@@ -103,7 +103,26 @@ if (isset($_GET['delete'])) {
     exit;
 }
 
-$clients = $pdo->query("SELECT * FROM clients ORDER BY created_at DESC")->fetchAll();
+$all_clients = $pdo->query("SELECT * FROM clients ORDER BY created_at DESC, id DESC")->fetchAll(PDO::FETCH_ASSOC);
+
+$pending_clients = [];
+$scheduled_clients = [];
+
+foreach ($all_clients as $c) {
+    $has_valid_schedule = !empty($c['tanggal_event']) 
+        && $c['tanggal_event'] !== '0000-00-00' 
+        && $c['tanggal_event'] !== '1970-01-01'
+        && !empty($c['jam_mulai']) 
+        && !empty($c['jam_selesai'])
+        && !($c['jam_mulai'] === '00:00:00' && $c['jam_selesai'] === '23:59:00' && (trim($c['lokasi'] ?? '') === '' || trim($c['lokasi'] ?? '') === '-'));
+
+    if ($has_valid_schedule) {
+        $scheduled_clients[] = $c;
+    } else {
+        $pending_clients[] = $c;
+    }
+}
+$clients = $all_clients;
 
 // Helper untuk membuat Direct Link otomatis dari data klien
 function buildDirectLink($c, $base_url) {
@@ -153,6 +172,140 @@ function countLocalPhotos($c) {
         }
     }
     return $count;
+}
+
+// Helper untuk render 1 baris tabel klien (dipakai baik untuk project belum ada tanggal maupun terjadwal)
+function renderClientRow($c, $base_url, $is_pending_section = false) {
+    $direct_link = buildDirectLink($c, $base_url);
+    $photo_count = countLocalPhotos($c);
+    $folder_c = resolveClientFolder($c);
+    $internal_gallery_url = rtrim($base_url, '/') . '/client/' . rawurlencode($folder_c);
+    $is_auto_lokasi = (trim($c['lokasi'] ?? '') === '' || trim($c['lokasi'] ?? '') === '-');
+
+    $tgl_obj = (!empty($c['tanggal_event']) && $c['tanggal_event'] !== '0000-00-00') ? strtotime($c['tanggal_event']) : null;
+    $bulan_indo = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+    $tgl_formatted = $tgl_obj ? (date('d', $tgl_obj) . ' ' . $bulan_indo[(int)date('m', $tgl_obj) - 1] . ' ' . date('Y', $tgl_obj)) : null;
+    $has_real_time = (!empty($c['jam_mulai']) && !empty($c['jam_selesai']) && !($c['jam_mulai'] === '00:00:00' && $c['jam_selesai'] === '23:59:00' && empty($tgl_formatted)));
+    $jam_formatted = $has_real_time ? (substr($c['jam_mulai'], 0, 5) . ' - ' . substr($c['jam_selesai'], 0, 5) . ' WIB') : null;
+?>
+<tr class="<?= $is_pending_section ? 'hover:bg-amber-50/70' : 'hover:bg-slate-50/70' ?> transition">
+    <!-- Kolom 1: Klien & Acara -->
+    <td class="px-5 py-4 align-top w-[30%] min-w-[260px]">
+        <div class="font-extrabold text-slate-900 text-base leading-snug mb-1.5 flex items-center gap-2 flex-wrap">
+            <span><?= htmlspecialchars($c['nama_client']) ?></span>
+            <?php if ($is_pending_section): ?>
+                <span class="text-[10px] font-black uppercase tracking-wider bg-amber-500 text-white px-2 py-0.5 rounded-full shadow-2xs">
+                    Perlu Jadwal
+                </span>
+            <?php endif; ?>
+        </div>
+
+        <div class="space-y-1 mb-2.5">
+            <div class="text-xs text-slate-600 flex items-center gap-1.5 font-medium flex-wrap">
+                <?php if ($tgl_formatted && $jam_formatted): ?>
+                    <span>📅 <?= $tgl_formatted ?></span>
+                    <span class="text-slate-300">•</span>
+                    <span>🕒 <?= $jam_formatted ?></span>
+                <?php else: ?>
+                    <a href="edit.php?id=<?= $c['id'] ?>" class="inline-flex items-center gap-1 bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 font-bold px-2.5 py-1 rounded-lg text-xs transition shadow-2xs">
+                        📅 Atur Tanggal & Jam Acara →
+                    </a>
+                    <span class="text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200" title="Project ini belum tampil di Live Events sampai tanggal & jam acara ditentukan">
+                        🔒 Belum Tampil di Live
+                    </span>
+                <?php endif; ?>
+            </div>
+            <div class="text-xs">
+                <?php if ($is_auto_lokasi): ?>
+                    <a href="edit.php?id=<?= $c['id'] ?>" class="inline-flex items-center gap-1 text-amber-600 font-semibold hover:underline">
+                        📍 + Isi Lokasi Acara
+                    </a>
+                <?php else: ?>
+                    <div class="text-slate-600 flex items-start gap-1 leading-snug">
+                        <span class="flex-shrink-0">📍</span>
+                        <span><?= nl2br(htmlspecialchars($c['lokasi'])) ?></span>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-1.5 flex-wrap">
+            <a href="<?= htmlspecialchars($internal_gallery_url) ?>" target="_blank" class="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition">
+                👁️ Lihat Galeri ↗
+            </a>
+            <?php if ($is_auto_lokasi): ?>
+                <span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200" title="Dibuat otomatis oleh sistem saat foto pertama dikirim dari LumaBooth">
+                    ⚡ Auto LumaBooth
+                </span>
+            <?php endif; ?>
+        </div>
+    </td>
+
+    <!-- Kolom 2: Link Direct Tamu (QR) -->
+    <td class="px-5 py-4 align-top w-[28%] min-w-[270px]">
+        <div class="bg-blue-50/80 border border-blue-200 rounded-xl p-3 shadow-2xs">
+            <div class="flex items-center justify-between gap-2 mb-1.5">
+                <span class="text-[11px] font-extrabold uppercase tracking-wide text-blue-700 flex items-center gap-1">
+                    🔗 Link Tamu (QR)
+                </span>
+                <a href="../<?= htmlspecialchars($c['qr_code_path']) ?>" target="_blank" class="inline-flex items-center gap-1 text-[10px] font-bold bg-white text-blue-700 border border-blue-200 hover:bg-blue-600 hover:text-white px-2 py-0.5 rounded-md shadow-2xs transition">
+                    📱 QR Code
+                </a>
+            </div>
+            <div class="flex items-center gap-1 bg-white border border-blue-100 rounded-lg p-1">
+                <input type="text" readonly value="<?= htmlspecialchars($direct_link) ?>" class="w-full bg-transparent text-xs font-mono text-slate-700 border-none outline-none focus:ring-0 select-all truncate px-1" title="<?= htmlspecialchars($direct_link) ?>">
+                <button type="button" onclick="copyText('<?= htmlspecialchars($direct_link, ENT_QUOTES) ?>', this)" class="bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold px-2.5 py-1 rounded-md transition whitespace-nowrap shadow-xs">
+                    Salin
+                </button>
+                <a href="<?= htmlspecialchars($direct_link) ?>" target="_blank" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold px-2 py-1 rounded-md transition whitespace-nowrap" title="Buka Link Tamu">
+                    ↗
+                </a>
+            </div>
+        </div>
+    </td>
+
+    <!-- Kolom 3: Link Khusus Klien (VIP) -->
+    <td class="px-5 py-4 align-top w-[28%] min-w-[270px]">
+        <div class="bg-gradient-to-r from-amber-50 to-orange-50/60 border border-amber-200 rounded-xl p-3 shadow-2xs">
+            <div class="flex items-center justify-between gap-2 mb-1.5">
+                <span class="text-[11px] font-extrabold uppercase tracking-wide text-amber-800 flex items-center gap-1">
+                    👑 Link Khusus Klien (VIP)
+                </span>
+                <span class="text-[10px] text-amber-800 font-bold bg-amber-100 border border-amber-200 px-1.5 py-0.2 rounded">ZIP</span>
+            </div>
+            <div class="flex items-center gap-1 bg-white border border-amber-200 rounded-lg p-1">
+                <input type="text" readonly value="<?= htmlspecialchars($direct_link . '/vip') ?>" class="w-full bg-transparent text-xs font-mono text-amber-950 font-semibold border-none outline-none focus:ring-0 select-all truncate px-1" title="<?= htmlspecialchars($direct_link . '/vip') ?>">
+                <button type="button" onclick="copyText('<?= htmlspecialchars($direct_link . '/vip', ENT_QUOTES) ?>', this)" class="bg-amber-500 hover:bg-amber-600 text-white text-[11px] font-bold px-2.5 py-1 rounded-md transition whitespace-nowrap shadow-xs">
+                    Salin VIP
+                </button>
+                <a href="<?= htmlspecialchars($direct_link . '/vip') ?>" target="_blank" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold px-2 py-1 rounded-md transition whitespace-nowrap" title="Buka Link Khusus VIP">
+                    ↗
+                </a>
+            </div>
+            <p class="text-[10px] text-amber-700/80 mt-1 font-medium">
+                ✨ Halaman download all media ZIP untuk pengantin
+            </p>
+        </div>
+    </td>
+
+    <!-- Kolom 4: Aksi -->
+    <td class="px-5 py-4 align-top text-right w-[14%] whitespace-nowrap">
+        <div class="flex flex-col gap-2 items-end">
+            <a href="gallery.php?id=<?= $c['id'] ?>" class="w-full inline-flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-2 rounded-xl shadow-xs transition">
+                🖼️ Kelola Foto (<?= $photo_count ?>)
+            </a>
+            <div class="flex items-center gap-1.5 w-full justify-end">
+                <a href="edit.php?id=<?= $c['id'] ?>" class="flex-1 text-center bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 transition">
+                    ✏️ Edit
+                </a>
+                <a href="?delete=<?= $c['id'] ?>" onclick="return confirm('Yakin ingin menghapus klien ini beserta seluruh datanya?')" class="flex-1 text-center bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold px-2.5 py-1.5 rounded-lg border border-red-200 transition">
+                    🗑️ Hapus
+                </a>
+            </div>
+        </div>
+    </td>
+</tr>
+<?php
 }
 ?>
 <!DOCTYPE html>
@@ -247,14 +400,63 @@ function countLocalPhotos($c) {
             </form>
         </div>
 
+        <!-- 1. Bagian Khusus: Project Belum Ada Tanggal (Selalu di Atas untuk Tracking & Pengingat) -->
+        <?php if (!empty($pending_clients)): ?>
+        <div class="bg-amber-50/90 border-2 border-amber-300 rounded-2xl shadow-sm p-6 mb-8 ring-4 ring-amber-100/60">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                <div class="flex items-center gap-3">
+                    <span class="flex h-4 w-4 relative flex-shrink-0">
+                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                        <span class="relative inline-flex rounded-full h-4 w-4 bg-amber-500"></span>
+                    </span>
+                    <div>
+                        <h2 class="text-lg font-black text-amber-950 flex items-center gap-2 flex-wrap">
+                            ⚠️ Project Menunggu Pengaturan Jadwal
+                            <span class="bg-amber-500 text-white text-xs font-black px-2.5 py-0.5 rounded-full shadow-xs">
+                                <?= count($pending_clients) ?> Project Perlu Diatur
+                            </span>
+                        </h2>
+                        <p class="text-xs text-amber-800 mt-0.5 font-medium">
+                            Project otomatis dari LumaBooth yang <strong>belum memiliki Tanggal & Jam Acara</strong>. Diletakkan paling atas agar mudah diingat & di-tracking. (Tidak terlihat oleh tamu di Live Events sampai jadwal diatur).
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="overflow-x-auto rounded-xl border border-amber-200 bg-white">
+                <table class="min-w-full divide-y divide-amber-200">
+                    <thead class="bg-amber-100/70">
+                        <tr>
+                            <th class="px-5 py-3.5 text-left text-xs font-bold text-amber-900 uppercase tracking-wider">Project Baru (LumaBooth)</th>
+                            <th class="px-5 py-3.5 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Link Direct Tamu (QR)</th>
+                            <th class="px-5 py-3.5 text-left text-xs font-bold text-amber-800 uppercase tracking-wider">Link Khusus Klien (VIP ZIP)</th>
+                            <th class="px-5 py-3.5 text-right text-xs font-bold text-slate-600 uppercase tracking-wider">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-amber-100 bg-white">
+                        <?php foreach($pending_clients as $c): 
+                            renderClientRow($c, $base_url, true);
+                        endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <?php endif; ?>
+
+        <!-- 2. Bagian Utama: Daftar Event Terjadwal -->
         <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-5">
                 <div>
-                    <h2 class="text-xl font-extrabold text-slate-900">Daftar Klien & Event Photobooth</h2>
-                    <p class="text-xs text-slate-500 mt-0.5">Kelola link direct tamu, link VIP download ZIP, dan foto galeri tiap acara.</p>
+                    <h2 class="text-xl font-extrabold text-slate-900 flex items-center gap-2">
+                        <span>📅 Daftar Event Terjadwal</span>
+                        <span class="bg-emerald-100 text-emerald-800 text-xs font-bold px-2.5 py-0.5 rounded-full border border-emerald-200">
+                            Aktif / Terjadwal
+                        </span>
+                    </h2>
+                    <p class="text-xs text-slate-500 mt-0.5">Event yang sudah memiliki jadwal resmi dan tampil di Live Events saat waktu acara tiba.</p>
                 </div>
                 <span class="self-start sm:self-auto bg-slate-100 text-slate-700 text-xs font-bold px-3 py-1 rounded-full border border-slate-200">
-                    Total: <?= count($clients) ?> Klien
+                    Total: <?= count($scheduled_clients) ?> Event Terjadwal
                 </span>
             </div>
 
@@ -269,139 +471,16 @@ function countLocalPhotos($c) {
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-200">
-                        <?php if (empty($clients)): ?>
+                        <?php if (empty($scheduled_clients)): ?>
                             <tr>
                                 <td colspan="4" class="px-6 py-12 text-center text-slate-400 text-sm">
-                                    Belum ada data klien. Silakan tambahkan klien baru di atas.
+                                    Belum ada event terjadwal. Silakan tambahkan event baru di atas atau atur tanggal untuk project yang ada di atas.
                                 </td>
                             </tr>
                         <?php else: ?>
-                            <?php foreach($clients as $c): 
-                                $direct_link = buildDirectLink($c, $base_url);
-                                $photo_count = countLocalPhotos($c);
-                                $folder_c = resolveClientFolder($c);
-                                $internal_gallery_url = rtrim($base_url, '/') . '/client/' . rawurlencode($folder_c);
-                                $is_auto_lokasi = (trim($c['lokasi'] ?? '') === '' || trim($c['lokasi'] ?? '') === '-');
-
-                                $tgl_obj = (!empty($c['tanggal_event']) && $c['tanggal_event'] !== '0000-00-00') ? strtotime($c['tanggal_event']) : null;
-                                $bulan_indo = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
-                                $tgl_formatted = $tgl_obj ? (date('d', $tgl_obj) . ' ' . $bulan_indo[(int)date('m', $tgl_obj) - 1] . ' ' . date('Y', $tgl_obj)) : null;
-                                $has_real_time = (!empty($c['jam_mulai']) && !empty($c['jam_selesai']) && !($c['jam_mulai'] === '00:00:00' && $c['jam_selesai'] === '23:59:00' && empty($tgl_formatted)));
-                                $jam_formatted = $has_real_time ? (substr($c['jam_mulai'], 0, 5) . ' - ' . substr($c['jam_selesai'], 0, 5) . ' WIB') : null;
-                            ?>
-                            <tr class="hover:bg-slate-50/70 transition">
-                                <!-- Kolom 1: Klien & Acara -->
-                                <td class="px-5 py-4 align-top w-[30%] min-w-[260px]">
-                                    <div class="font-extrabold text-slate-900 text-base leading-snug mb-1.5">
-                                        <?= htmlspecialchars($c['nama_client']) ?>
-                                    </div>
-
-                                    <div class="space-y-1 mb-2.5">
-                                        <div class="text-xs text-slate-600 flex items-center gap-1.5 font-medium flex-wrap">
-                                            <?php if ($tgl_formatted && $jam_formatted): ?>
-                                                <span>📅 <?= $tgl_formatted ?></span>
-                                                <span class="text-slate-300">•</span>
-                                                <span>🕒 <?= $jam_formatted ?></span>
-                                            <?php else: ?>
-                                                <a href="edit.php?id=<?= $c['id'] ?>" class="inline-flex items-center gap-1 text-amber-600 hover:text-amber-700 font-semibold hover:underline">
-                                                    📅 + Atur Tanggal & Jam Acara
-                                                </a>
-                                                <span class="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200" title="Project ini belum tampil di Live Events sampai tanggal & jam acara ditentukan">
-                                                    🔒 Belum Tampil di Live
-                                                </span>
-                                            <?php endif; ?>
-                                        </div>
-                                        <div class="text-xs">
-                                            <?php if ($is_auto_lokasi): ?>
-                                                <a href="edit.php?id=<?= $c['id'] ?>" class="inline-flex items-center gap-1 text-amber-600 font-semibold hover:underline">
-                                                    📍 + Isi Lokasi Acara
-                                                </a>
-                                            <?php else: ?>
-                                                <div class="text-slate-600 flex items-start gap-1 leading-snug">
-                                                    <span class="flex-shrink-0">📍</span>
-                                                    <span><?= nl2br(htmlspecialchars($c['lokasi'])) ?></span>
-                                                </div>
-                                            <?php endif; ?>
-                                        </div>
-                                    </div>
-
-                                    <div class="flex items-center gap-1.5 flex-wrap">
-                                        <a href="<?= htmlspecialchars($internal_gallery_url) ?>" target="_blank" class="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition">
-                                            👁️ Lihat Galeri ↗
-                                        </a>
-                                        <?php if ($is_auto_lokasi): ?>
-                                            <span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200" title="Dibuat otomatis oleh sistem saat foto pertama dikirim dari LumaBooth">
-                                                ⚡ Auto LumaBooth
-                                            </span>
-                                        <?php endif; ?>
-                                    </div>
-                                </td>
-
-                                <!-- Kolom 2: Link Direct Tamu (QR) -->
-                                <td class="px-5 py-4 align-top w-[28%] min-w-[270px]">
-                                    <div class="bg-blue-50/80 border border-blue-200 rounded-xl p-3 shadow-2xs">
-                                        <div class="flex items-center justify-between gap-2 mb-1.5">
-                                            <span class="text-[11px] font-extrabold uppercase tracking-wide text-blue-700 flex items-center gap-1">
-                                                🔗 Link Tamu (QR)
-                                            </span>
-                                            <a href="../<?= htmlspecialchars($c['qr_code_path']) ?>" target="_blank" class="inline-flex items-center gap-1 text-[10px] font-bold bg-white text-blue-700 border border-blue-200 hover:bg-blue-600 hover:text-white px-2 py-0.5 rounded-md shadow-2xs transition">
-                                                📱 QR Code
-                                            </a>
-                                        </div>
-                                        <div class="flex items-center gap-1 bg-white border border-blue-100 rounded-lg p-1">
-                                            <input type="text" readonly value="<?= htmlspecialchars($direct_link) ?>" class="w-full bg-transparent text-xs font-mono text-slate-700 border-none outline-none focus:ring-0 select-all truncate px-1" title="<?= htmlspecialchars($direct_link) ?>">
-                                            <button type="button" onclick="copyText('<?= htmlspecialchars($direct_link, ENT_QUOTES) ?>', this)" class="bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold px-2.5 py-1 rounded-md transition whitespace-nowrap shadow-xs">
-                                                Salin
-                                            </button>
-                                            <a href="<?= htmlspecialchars($direct_link) ?>" target="_blank" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold px-2 py-1 rounded-md transition whitespace-nowrap" title="Buka Link Tamu">
-                                                ↗
-                                            </a>
-                                        </div>
-                                    </div>
-                                </td>
-
-                                <!-- Kolom 3: Link Khusus Klien (VIP) -->
-                                <td class="px-5 py-4 align-top w-[28%] min-w-[270px]">
-                                    <div class="bg-gradient-to-r from-amber-50 to-orange-50/60 border border-amber-200 rounded-xl p-3 shadow-2xs">
-                                        <div class="flex items-center justify-between gap-2 mb-1.5">
-                                            <span class="text-[11px] font-extrabold uppercase tracking-wide text-amber-800 flex items-center gap-1">
-                                                👑 Link Khusus Klien (VIP)
-                                            </span>
-                                            <span class="text-[10px] text-amber-800 font-bold bg-amber-100 border border-amber-200 px-1.5 py-0.2 rounded">ZIP</span>
-                                        </div>
-                                        <div class="flex items-center gap-1 bg-white border border-amber-200 rounded-lg p-1">
-                                            <input type="text" readonly value="<?= htmlspecialchars($direct_link . '/vip') ?>" class="w-full bg-transparent text-xs font-mono text-amber-950 font-semibold border-none outline-none focus:ring-0 select-all truncate px-1" title="<?= htmlspecialchars($direct_link . '/vip') ?>">
-                                            <button type="button" onclick="copyText('<?= htmlspecialchars($direct_link . '/vip', ENT_QUOTES) ?>', this)" class="bg-amber-500 hover:bg-amber-600 text-white text-[11px] font-bold px-2.5 py-1 rounded-md transition whitespace-nowrap shadow-xs">
-                                                Salin VIP
-                                            </button>
-                                            <a href="<?= htmlspecialchars($direct_link . '/vip') ?>" target="_blank" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold px-2 py-1 rounded-md transition whitespace-nowrap" title="Buka Link Khusus VIP">
-                                                ↗
-                                            </a>
-                                        </div>
-                                        <p class="text-[10px] text-amber-700/80 mt-1 font-medium">
-                                            ✨ Halaman download all media ZIP untuk pengantin
-                                        </p>
-                                    </div>
-                                </td>
-
-                                <!-- Kolom 4: Aksi -->
-                                <td class="px-5 py-4 align-top text-right w-[14%] whitespace-nowrap">
-                                    <div class="flex flex-col gap-2 items-end">
-                                        <a href="gallery.php?id=<?= $c['id'] ?>" class="w-full inline-flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-2 rounded-xl shadow-xs transition">
-                                            🖼️ Kelola Foto (<?= $photo_count ?>)
-                                        </a>
-                                        <div class="flex items-center gap-1.5 w-full justify-end">
-                                            <a href="edit.php?id=<?= $c['id'] ?>" class="flex-1 text-center bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 transition">
-                                                ✏️ Edit
-                                            </a>
-                                            <a href="?delete=<?= $c['id'] ?>" onclick="return confirm('Yakin ingin menghapus klien ini beserta seluruh datanya?')" class="flex-1 text-center bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold px-2.5 py-1.5 rounded-lg border border-red-200 transition">
-                                                🗑️ Hapus
-                                            </a>
-                                        </div>
-                                    </div>
-                                </td>
-                            </tr>
-                            <?php endforeach; ?>
+                            <?php foreach($scheduled_clients as $c): 
+                                renderClientRow($c, $base_url, false);
+                            endforeach; ?>
                         <?php endif; ?>
                     </tbody>
                 </table>
