@@ -69,6 +69,7 @@ if ($db_client && !empty(trim($db_client['lokasi'] ?? '')) && trim($db_client['l
 $display_tab_title = "Galeri - " . $display_title;
 $visible_folders = ['Prints', 'Animated'];
 $hidden_files = [];
+$is_vip_mode = isset($_GET['vip']) && $_GET['vip'] === '1';
 
 $config_path = $target_dir . '/config.json';
 if (file_exists($config_path)) {
@@ -93,15 +94,26 @@ if (file_exists($config_path)) {
 
 // Membaca file rekursif dari photos/{EventName}/{Prints,Animated,Singles,...}
 $files_data = [];
+$zip_total_files = 0;
+$zip_total_bytes = 0;
 if (is_dir($target_dir)) {
     $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($target_dir));
     foreach ($iterator as $file) {
         if ($file->isFile()) {
             $fname_only = $file->getFilename();
-            if (strpos($fname_only, '.part_') !== false || $fname_only === 'config.json') continue;
+            if (
+                strpos($fname_only, '.part_') !== false ||
+                strpos($fname_only, '.cache_') === 0 ||
+                strpos($fname_only, '.tmp_zip_') === 0 ||
+                $fname_only === 'config.json' ||
+                $fname_only === '.deleted_by_admin' ||
+                substr($fname_only, -5) === '.lock'
+            ) {
+                continue;
+            }
 
             $ext = strtolower($file->getExtension());
-            if (in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'mp4', 'mov', 'webm'])) {
+            if (in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'mov', 'webm'])) {
                 $path = str_replace('\\', '/', $file->getPathname());
                 $target_norm = str_replace('\\', '/', $target_dir);
                 $rel_path = ltrim( substr($path, strlen($target_norm)), '/' );
@@ -128,6 +140,12 @@ if (is_dir($target_dir)) {
                     continue;
                 }
 
+                $f_size = @$file->getSize() ?: 0;
+                if ($f_size > 0) {
+                    $zip_total_files++;
+                    $zip_total_bytes += $f_size;
+                }
+
                 if ($parent_folder === '' || in_array($parent_folder, $visible_folders)) {
                     $encoded_client = rawurlencode($resolved_folder);
                     $encoded_rel_path = implode('/', array_map('rawurlencode', explode('/', $rel_path)));
@@ -142,6 +160,7 @@ if (is_dir($target_dir)) {
         }
     }
 }
+$zip_total_mb = round($zip_total_bytes / (1024 * 1024), 1);
 
 // =========================================================================
 // ALGORITMA GROUPING PER SESI LUMABOOTH (Anchor-Based Proximity <= 45 detik)
@@ -266,6 +285,8 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
     echo json_encode([
         'session_count' => count($sessions),
         'total_files' => count($files_data),
+        'zip_total_files' => $zip_total_files,
+        'zip_total_mb' => $zip_total_mb,
         'sessions' => $sessions
     ]);
     exit;
@@ -296,6 +317,20 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
             <h1><?php echo htmlspecialchars($display_title); ?></h1>
             <p><?php echo nl2br(htmlspecialchars($display_subtitle)); ?></p>
         </div>
+
+        <?php if ($is_vip_mode): ?>
+        <div class="vip-download-box">
+            <div class="vip-badge">👑 PORTAL KHUSUS CLIENT</div>
+            <p class="vip-info-text">
+                Tersedia <strong id="vipTotalFiles"><?php echo (int)$zip_total_files; ?></strong> file (<strong id="vipTotalMb"><?php echo $zip_total_mb; ?> MB</strong>) yang siap diunduh sekaligus dalam 1 file <strong>.ZIP</strong> utuh.
+            </p>
+            <button type="button" id="btnDownloadAllZip" onclick="downloadAllFilesZip()" class="btn-download-zip" <?php echo $zip_total_files === 0 ? 'disabled' : ''; ?>>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                <span id="btnDownloadAllZipText">Download Semua File (.ZIP)</span>
+            </button>
+            <div id="zipStatusMsg" class="vip-status-msg" style="display:none;"></div>
+        </div>
+        <?php endif; ?>
     </header>
 
     <main class="gallery-container">
@@ -344,11 +379,57 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
 
     <script src="script.js?v=<?php echo @filemtime(__DIR__ . '/script.js') ?: '2'; ?>"></script>
     <script>
+        async function downloadAllFilesZip() {
+            const btn = document.getElementById('btnDownloadAllZip');
+            const btnText = document.getElementById('btnDownloadAllZipText');
+            const statusBox = document.getElementById('zipStatusMsg');
+            if (!btn) return;
+
+            btn.disabled = true;
+            btnText.innerText = 'Menyiapkan & Memverifikasi ZIP...';
+            if (statusBox) {
+                statusBox.style.display = 'block';
+                statusBox.className = 'vip-status-msg preparing';
+                statusBox.innerText = '⏳ Sedang membungkus seluruh foto & video menjadi 1 file .ZIP utuh (anti-corrupt). Mohon tunggu sebentar...';
+            }
+
+            try {
+                const res = await fetch(`download_zip.php?client=<?php echo rawurlencode($resolved_folder); ?>&action=prepare`);
+                const data = await res.json();
+                if (data && data.ok && data.download_url) {
+                    btnText.innerText = `Mengunduh ZIP (${data.zip_size_mb} MB)...`;
+                    if (statusBox) {
+                        statusBox.className = 'vip-status-msg ready';
+                        statusBox.innerText = `✅ Arsip ZIP Terverifikasi (${data.file_count} File • ${data.zip_size_mb} MB)! Unduhan sedang dimulai otomatis...`;
+                    }
+                    window.location.href = data.download_url;
+                    setTimeout(() => {
+                        btn.disabled = false;
+                        btnText.innerText = 'Download Semua File (.ZIP)';
+                    }, 4000);
+                } else {
+                    throw new Error((data && data.error) ? data.error : 'Gagal menyiapkan file ZIP.');
+                }
+            } catch (err) {
+                if (statusBox) {
+                    statusBox.className = 'vip-status-msg error';
+                    statusBox.innerText = '⚠️ ' + (err.message || 'Terjadi kesalahan jaringan, silakan coba lagi.');
+                }
+                btn.disabled = false;
+                btnText.innerText = 'Download Semua File (.ZIP)';
+            }
+        }
+
         // Auto-Sync Real-time setiap 8 detik: otomatis memunculkan foto baru atau menyembunyikan foto yang di-hide Admin tanpa refresh
         setInterval(async () => {
             try {
                 const res = await fetch(`index.php?client=<?php echo rawurlencode($resolved_folder); ?>&ajax=1`);
                 const data = await res.json();
+                const vipFilesEl = document.getElementById('vipTotalFiles');
+                const vipMbEl = document.getElementById('vipTotalMb');
+                if (vipFilesEl && typeof data.zip_total_files !== 'undefined') vipFilesEl.innerText = data.zip_total_files;
+                if (vipMbEl && typeof data.zip_total_mb !== 'undefined') vipMbEl.innerText = data.zip_total_mb + ' MB';
+
                 if (JSON.stringify(data.sessions) !== JSON.stringify(gallerySessions)) {
                     totalFilesCount = data.total_files;
                     gallerySessions = data.sessions;

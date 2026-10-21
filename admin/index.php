@@ -293,11 +293,18 @@ function countLocalPhotos($c) {
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm"><?= $c['tanggal_event'] ?> <br> <span class="text-gray-500"><?= $c['jam_mulai'] ?> - <?= $c['jam_selesai'] ?></span></td>
                             <td class="px-6 py-4 text-sm">
-                                <div class="mb-1.5">
-                                    <span class="text-[11px] font-bold uppercase text-blue-600 block">Link Direct (QR):</span>
+                                <div class="mb-2">
+                                    <span class="text-[11px] font-bold uppercase text-blue-600 block">Link Direct Tamu (QR):</span>
                                     <div class="flex items-center gap-2 mt-0.5">
                                         <a href="<?= htmlspecialchars($direct_link) ?>" target="_blank" class="bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded font-mono text-xs hover:underline break-all"><?= htmlspecialchars($direct_link) ?></a>
                                         <button type="button" onclick="copyText('<?= htmlspecialchars($direct_link, ENT_QUOTES) ?>', this)" class="text-xs bg-slate-800 text-white px-2 py-0.5 rounded hover:bg-slate-700 whitespace-nowrap">Copy</button>
+                                    </div>
+                                </div>
+                                <div class="mb-2">
+                                    <span class="text-[11px] font-bold uppercase text-indigo-700 block">👑 Link Khusus Client (Download All ZIP):</span>
+                                    <div class="flex items-center gap-2 mt-0.5">
+                                        <a href="<?= htmlspecialchars($direct_link . '/vip') ?>" target="_blank" class="bg-indigo-50 text-indigo-800 border border-indigo-200 px-2 py-0.5 rounded font-mono text-xs font-semibold hover:underline break-all"><?= htmlspecialchars($direct_link . '/vip') ?></a>
+                                        <button type="button" onclick="copyText('<?= htmlspecialchars($direct_link . '/vip', ENT_QUOTES) ?>', this)" class="text-xs bg-indigo-700 text-white px-2 py-0.5 rounded hover:bg-indigo-800 whitespace-nowrap">Copy VIP</button>
                                     </div>
                                 </div>
                                 <div>

@@ -292,9 +292,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $selected_folder !== '') {
         foreach ($it as $file) {
             if ($file->isFile()) {
                 $ext = strtolower($file->getExtension());
+                $fn_del = $file->getFilename();
                 if (in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'mov', 'webm'])) {
                     @unlink($file->getPathname());
                     $del_cnt++;
+                } elseif (strpos($fn_del, '.cache_all_') === 0 || strpos($fn_del, '.tmp_zip_') === 0) {
+                    @unlink($file->getPathname());
                 }
             }
         }
@@ -581,17 +584,28 @@ $sessions = array_values($sessions_map);
                             </div>
                         </div>
 
-                        <!-- Baris Link Direct QR & Statistik Cepat -->
+                        <!-- Baris Link Direct QR, Link VIP Client & Statistik Cepat -->
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                            <div class="md:col-span-2 bg-blue-50/70 border border-blue-200 rounded-xl p-3 flex items-center justify-between gap-2">
+                            <div class="bg-blue-50/70 border border-blue-200 rounded-xl p-3 flex items-center justify-between gap-2">
                                 <div class="min-w-0">
-                                    <span class="text-[11px] font-bold uppercase text-blue-700 block">🔗 Link Direct (QR Code Tamu):</span>
-                                    <a href="<?= htmlspecialchars($selected_event['direct_link']) ?>" target="_blank" class="font-mono text-xs md:text-sm font-bold text-blue-600 hover:underline truncate block">
+                                    <span class="text-[11px] font-bold uppercase text-blue-700 block">🔗 Link Tamu (QR Code):</span>
+                                    <a href="<?= htmlspecialchars($selected_event['direct_link']) ?>" target="_blank" class="font-mono text-xs font-bold text-blue-600 hover:underline truncate block">
                                         <?= htmlspecialchars($selected_event['direct_link']) ?>
                                     </a>
                                 </div>
                                 <button type="button" onclick="copyText('<?= htmlspecialchars($selected_event['direct_link'], ENT_QUOTES) ?>', this)" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-2 rounded-lg flex-shrink-0 transition">
-                                    Copy Link
+                                    Copy
+                                </button>
+                            </div>
+                            <div class="bg-indigo-50/80 border border-indigo-200 rounded-xl p-3 flex items-center justify-between gap-2">
+                                <div class="min-w-0">
+                                    <span class="text-[11px] font-bold uppercase text-indigo-800 block">👑 Link Client (Download ZIP):</span>
+                                    <a href="<?= htmlspecialchars($selected_event['direct_link'] . '/vip') ?>" target="_blank" class="font-mono text-xs font-bold text-indigo-700 hover:underline truncate block">
+                                        <?= htmlspecialchars($selected_event['direct_link'] . '/vip') ?>
+                                    </a>
+                                </div>
+                                <button type="button" onclick="copyText('<?= htmlspecialchars($selected_event['direct_link'] . '/vip', ENT_QUOTES) ?>', this)" class="bg-indigo-700 hover:bg-indigo-800 text-white text-xs font-bold px-3 py-2 rounded-lg flex-shrink-0 transition">
+                                    Copy VIP
                                 </button>
                             </div>
                             <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center justify-around text-center">

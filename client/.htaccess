@@ -1,5 +1,8 @@
 RewriteEngine On
 
+# Tangkap URL khusus Client VIP: /client/{NamaFolder}/vip atau /all
+RewriteRule ^([^/]+)/(vip|all|client|master|download)/?$ $1?vip=1 [R=302,L,QSA,NC]
+
 # Prioritaskan cek di dalam folder photos/ agar tidak bentrok jika tidak sengaja terbuat folder di luar
 RewriteCond %{REQUEST_URI} ^(.*/)([^/]+)/?$
 RewriteCond %{DOCUMENT_ROOT}%1photos/%2 -d [OR]

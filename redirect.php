@@ -7,13 +7,22 @@ $request_uri = $_SERVER['REQUEST_URI'] ?? '';
 $uri_path = parse_url($request_uri, PHP_URL_PATH);
 $uri_path = rawurldecode($uri_path);
 
-// Cari kecocokan pola /TAHUN/NAMA_ACARA dari URL
-if (preg_match('#/([0-9]{4})/([^/]+?)/?$#', $uri_path, $matches)) {
+// Cari kecocokan pola /TAHUN/NAMA_ACARA atau /TAHUN/NAMA_ACARA/vip dari URL
+$is_vip_mode = false;
+if (preg_match('#/([0-9]{4})/([^/]+?)/(vip|all|client|master|download)/?$#i', $uri_path, $matches)) {
+    $year = $matches[1];
+    $custom_slug = $matches[2];
+    $is_vip_mode = true;
+} elseif (preg_match('#/([0-9]{4})/([^/]+?)/?$#', $uri_path, $matches)) {
     $year = $matches[1];
     $custom_slug = $matches[2];
 } else {
     $year = $_GET['year'] ?? '';
     $custom_slug = $_GET['slug'] ?? '';
+    if (preg_match('#^(.+?)/(vip|all|client|master|download)/?$#i', $custom_slug, $m)) {
+        $custom_slug = $m[1];
+        $is_vip_mode = true;
+    }
 }
 
 // Normalisasi: hapus semua spasi dan ubah ke huruf kecil untuk pencocokan
@@ -21,8 +30,9 @@ $search_slug = strtolower(preg_replace('/\s+/', '', $custom_slug));
 $search_alnum = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $custom_slug));
 
 // Helper untuk meroute klien ke Galeri Internal (/client/<FolderName>) atau Link Eksternal
-function routeToClientDestination($c, $base_url) {
+function routeToClientDestination($c, $base_url, $is_vip_mode = false) {
     $target = trim($c['folder_foto_path'] ?? '');
+    $vip_suffix = $is_vip_mode ? '?vip=1' : '';
 
     // 1. Cek apakah ada folder di /client/photos/ yang cocok dengan folder_foto_path atau nama_client
     $photos_dir = __DIR__ . '/client/photos';
@@ -55,20 +65,21 @@ function routeToClientDestination($c, $base_url) {
 
     // 3. Jika folder ditemukan di /client/photos/ lokal pada files.yuhu.co.id, arahkan ke galeri internal
     if ($matched_photo_folder !== '') {
-        $gallery_url = rtrim($base_url, '/') . '/client/' . rawurlencode($matched_photo_folder);
+        $gallery_url = rtrim($base_url, '/') . '/client/' . rawurlencode($matched_photo_folder) . $vip_suffix;
         header("Location: " . $gallery_url, true, 302);
         exit;
     }
 
     // 4. Jika target sudah berupa URL lengkap (misal acara lama di qr.yuhu.co.id/client/...), arahkan ke sana
     if (preg_match('#^https?://#i', $target)) {
-        header("Location: " . $target, true, 302);
+        $sep = (strpos($target, '?') !== false) ? '&' : '?';
+        header("Location: " . $target . ($is_vip_mode ? $sep . 'vip=1' : ''), true, 302);
         exit;
     }
 
     // 5. Fallback ke galeri internal berdasarkan nama folder / nama klien
     $folder_param = $folder_from_url !== '' ? $folder_from_url : str_replace(' ', '_', $c['nama_client']);
-    $gallery_url = rtrim($base_url, '/') . '/client/' . rawurlencode($folder_param);
+    $gallery_url = rtrim($base_url, '/') . '/client/' . rawurlencode($folder_param) . $vip_suffix;
     header("Location: " . $gallery_url, true, 302);
     exit;
 }
@@ -84,7 +95,7 @@ if (!empty($year) && !empty($search_slug)) {
         $client_alnum = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $c['nama_client']));
         $folder_alnum = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', extractLumaboothFolderFromUrl($c['folder_foto_path'] ?? '')));
         if ($client_clean_name === $search_slug || $client_alnum === $search_alnum || ($folder_alnum !== '' && $folder_alnum === $search_alnum) || strtolower($c['slug']) === $search_slug) {
-            routeToClientDestination($c, $base_url);
+            routeToClientDestination($c, $base_url, $is_vip_mode);
         }
     }
 
@@ -95,7 +106,7 @@ if (!empty($year) && !empty($search_slug)) {
         $client_alnum = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $c['nama_client']));
         $folder_alnum = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', extractLumaboothFolderFromUrl($c['folder_foto_path'] ?? '')));
         if ($client_clean_name === $search_slug || $client_alnum === $search_alnum || ($folder_alnum !== '' && $folder_alnum === $search_alnum) || strtolower($c['slug']) === $search_slug) {
-            routeToClientDestination($c, $base_url);
+            routeToClientDestination($c, $base_url, $is_vip_mode);
         }
     }
 
@@ -105,7 +116,8 @@ if (!empty($year) && !empty($search_slug)) {
         foreach (scandir($photos_dir) as $d) {
             if ($d !== '.' && $d !== '..' && is_dir($photos_dir . '/' . $d)) {
                 if (strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $d)) === $search_alnum) {
-                    header("Location: " . rtrim($base_url, '/') . '/client/' . rawurlencode($d), true, 302);
+                    $vip_suffix = $is_vip_mode ? '?vip=1' : '';
+                    header("Location: " . rtrim($base_url, '/') . '/client/' . rawurlencode($d) . $vip_suffix, true, 302);
                     exit;
                 }
             }
