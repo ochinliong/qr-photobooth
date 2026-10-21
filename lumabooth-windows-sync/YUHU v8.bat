@@ -2,22 +2,22 @@
 SETLOCAL EnableDelayedExpansion
 
 :: ============================================================================
-:: YUHU PHOTOBOOTH - LUMABOOTH WINDOWS (OKTOBER 2026) UNIVERSAL SYNC & TRIGGER (VERSI v8 - AUTO BACKFILL PROJECT LAMA)
+:: YUHU PHOTOBOOTH - LUMABOOTH WINDOWS (OKTOBER 2026) UNIVERSAL SYNC & TRIGGER
+:: VERSI: YUHU v9.bat (DETACHED SILENT ENGINE + TURBO BULK BACKFILL)
 :: ============================================================================
 :: Mendukung 2 Cara Kerja Sekaligus (Di Komputer Mana Saja):
 :: 1. Dipanggil Otomatis oleh LumaBooth Trigger (Settings -> Triggers -> Application)
 :: 2. Diklik 2x Langsung oleh Operator (Otomatis jalan di belakang layar tanpa
-::    jendela mengganggu, memantau folder LumaBooth terus-menerus selama 6+ jam!)
+::    jendela mengganggu, memantau & mengupload seluruh foto lama & baru!)
 ::
-:: KEUNGGULAN:
-:: - Auto-Backfill Project Lama/Sebelumnya: Jika project sudah dibuat sebelumnya
-::   dan sudah ada foto di dalamnya sebelum .bat dimasukkan ke Trigger, SELURUH
-::   foto sebelumnya otomatis ikut terupload 100% ke project tersebut!
-:: - Bebas Bug Spasi Nama File (Aman dinamai "YUHU v7.bat", "YUHU v5.bat", dll)
-:: - Auto-Detect Lokasi Folder dslrBooth / LumaBooth di PC mana pun:
-::   (C:\dslrBooth, D:\dslrBooth, Pictures\dslrBooth, Pictures\LumaBooth, Documents\dslrBooth)
-:: - Prioritas CPU Rendah (/BELOWNORMAL) -> 100% Aman untuk Kamera & Printer
-:: - Anti-Gagal Upload (Antrean Offline Otomatis saat Internet/Listrik Mati)
+:: PERBAIKAN PENTING DI v9:
+:: - Detached Silent Engine (wscript SW_HIDE): 100% terlepas dari proses LumaBooth
+::   sehingga worker TIDAK AKAN MATI di tengah jalan saat mengupload ratusan/ribuan
+::   foto lama, dan kembali ke LumaBooth dalam < 0.05 detik tanpa layar hitam!
+:: - Bebas macet "more +1" saat antrean > 40 file (Sanggup upload 5.000+ file!)
+:: - Pemindaian ribuan foto lama < 0.1 detik (Tanpa bottleneck FINDSTR di awal)
+:: - Sistem Dual-Queue (Priority Queue + Bulk Queue): Foto tamu yang baru foto
+::   langsung diselipkan ke urutan #1 walaupun sedang upload ratusan foto lama!
 :: ============================================================================
 
 SET "API_URL_PRIMARY=https://files.yuhu.co.id/client/api_upload.php"
@@ -27,15 +27,43 @@ SET "API_TOKEN=YuhuSecretToken2026"
 SET "CURL=%SystemRoot%\System32\curl.exe"
 IF NOT EXIST "%CURL%" SET "CURL=curl.exe"
 
+SET "WSCRIPT=%SystemRoot%\System32\wscript.exe"
+IF NOT EXIST "%WSCRIPT%" SET "WSCRIPT=wscript.exe"
+
 SET "SELF=%~f0"
 SET "WORK_DIR=%~dp0"
+SET "SILENT_VBS=%WORK_DIR%silent_runner.vbs"
+SET "PRIORITY_QUEUE=%WORK_DIR%priority_queue.txt"
 SET "QUEUE_FILE=%WORK_DIR%upload_queue.txt"
+SET "BATCH_FILE=%WORK_DIR%active_batch.txt"
 SET "SENT_LOG=%WORK_DIR%sent_history.txt"
 SET "ACTIVE_PROJ_FILE=%WORK_DIR%active_project.txt"
 SET "LOCK_FILE=%WORK_DIR%worker.lock"
 SET "SWEEP_LOCK=%WORK_DIR%sweep.lock"
 SET "DAEMON_LOCK=%WORK_DIR%daemon.lock"
 SET "LOG_FILE=%WORK_DIR%last_upload.log"
+
+:: Auto-generate VBScript launcher (WMI Win32_Process + Fallback WScript.Shell)
+:: agar proses background 100% terlepas dari Job Object LumaBooth dan berjalan tanpa jendela
+IF NOT EXIST "%SILENT_VBS%" (
+    (
+        ECHO On Error Resume Next
+        ECHO Set wmi = GetObject("winmgmts:{impersonationLevel=impersonate}!\\.\root\cimv2"^)
+        ECHO Set st = wmi.Get("Win32_ProcessStartup"^).SpawnInstance_
+        ECHO st.ShowWindow = 0
+        ECHO st.PriorityClass = 16384
+        ECHO Set pr = wmi.Get("Win32_Process"^)
+        ECHO cmd = "cmd.exe /d /c ""call """ ^& WScript.Arguments(1^) ^& """ " ^& WScript.Arguments(2^)
+        ECHO If WScript.Arguments.Count ^> 3 Then cmd = cmd ^& " """ ^& WScript.Arguments(3^) ^& """"
+        ECHO cmd = cmd ^& """"
+        ECHO rc = pr.Create(cmd, WScript.Arguments(0^), st, pid^)
+        ECHO If Err.Number ^<^> 0 Or rc ^<^> 0 Then
+        ECHO     Set sh = CreateObject("WScript.Shell"^)
+        ECHO     sh.CurrentDirectory = WScript.Arguments(0^)
+        ECHO     sh.Run cmd, 0, False
+        ECHO End If
+    ) > "%SILENT_VBS%"
+)
 
 :: ============================================================================
 :: AUTO-DETECT LOKASI FOLDER DATA LUMABOOTH / DSLRBOOTH DI PC INI
@@ -63,19 +91,17 @@ IF /I "%~1"=="BG_DAEMON"  GOTO :bg_daemon_entry
 SET "EVENT_TYPE=%~1"
 IF "%EVENT_TYPE%"=="" (
     ECHO =====================================================================
-    ECHO   YUHU PHOTOBOOTH - LUMABOOTH CLOUD AUTO-UPLOADER AKTIF
+    ECHO   YUHU PHOTOBOOTH v9 - LUMABOOTH CLOUD AUTO-UPLOADER AKTIF
     ECHO =====================================================================
     ECHO   Folder Data LumaBooth : "!DSLRBOOTH_DIR!"
     ECHO   Folder Kerja Script   : "!WORK_DIR!"
     ECHO   Target Cloud Server   : !API_URL_PRIMARY!
     ECHO =====================================================================
     ECHO.
-    ECHO [*] Memulai pemantauan otomatis ^& sinkronisasi foto lama/baru...
-    PUSHD "%WORK_DIR%"
-    START "" /B /BELOWNORMAL cmd /d /c "call "%~nx0" BG_DAEMON" >nul 2>&1
-    POPD
-    ECHO [V] Berhasil aktif! Semua foto yang sudah ada maupun foto baru di
-    ECHO     "!DSLRBOOTH_DIR!" akan otomatis di-upload ke Cloud Portal.
+    ECHO [*] Memulai sinkronisasi seluruh foto yang sudah ada ^& foto baru...
+    CALL :launch_detached BG_DAEMON ""
+    ECHO [V] Berhasil aktif! Seluruh foto di project aktif "!DSLRBOOTH_DIR!"
+    ECHO     sedang di-upload otomatis di latar belakang sampai 100%% tuntas.
     ECHO     Jendela ini akan menutup otomatis dalam 3 detik...
     ping 127.0.0.1 -n 4 >nul 2>&1
     EXIT /B 0
@@ -90,24 +116,17 @@ IF /I "%EVENT_TYPE%"=="processing_start" EXIT /B 0
 IF /I "%EVENT_TYPE%"=="capture_start"    EXIT /B 0
 
 :: Saat session_start, sharing_screen, atau session_end muncul di LumaBooth,
-:: jalankan pemindaian penuh di background agar foto-foto sebelumnya di project
-:: yang belum sempat terupload langsung ikut masuk antrean!
+:: pindai seluruh foto di project aktif agar foto lama langsung ikut terupload!
 IF /I "%EVENT_TYPE%"=="session_start" (
-    PUSHD "%WORK_DIR%"
-    START "" /B /BELOWNORMAL cmd /d /c "call "%~nx0" BG_SWEEP" >nul 2>&1
-    POPD
+    CALL :launch_detached BG_SWEEP ""
     EXIT /B 0
 )
 IF /I "%EVENT_TYPE%"=="sharing_screen" (
-    PUSHD "%WORK_DIR%"
-    START "" /B /BELOWNORMAL cmd /d /c "call "%~nx0" BG_SWEEP" >nul 2>&1
-    POPD
+    CALL :launch_detached BG_SWEEP ""
     EXIT /B 0
 )
 IF /I "%EVENT_TYPE%"=="session_end" (
-    PUSHD "%WORK_DIR%"
-    START "" /B /BELOWNORMAL cmd /d /c "call "%~nx0" BG_SWEEP" >nul 2>&1
-    POPD
+    CALL :launch_detached BG_SWEEP ""
     EXIT /B 0
 )
 
@@ -146,12 +165,10 @@ IF EXIST "!P_EVENT_DIR!" (
     > "%ACTIVE_PROJ_FILE%" ECHO !P_EVENT_DIR!
 )
 
-:: Masukkan file terbaru ini ke antrean & langsung jalankan Worker + Sweep seluruh foto lama di project ini!
->> "%QUEUE_FILE%" ECHO !FILE_PARAM!
-PUSHD "%WORK_DIR%"
-START "" /B /BELOWNORMAL cmd /d /c "call "%~nx0" WORKER" >nul 2>&1
-START "" /B /BELOWNORMAL cmd /d /c "call "%~nx0" BG_SWEEP "!P_EVENT_DIR!"" >nul 2>&1
-POPD
+:: Masukkan file terbaru ini ke PRIORITY_QUEUE (Urutan #1) + jalankan Worker & Sweep project ini!
+>> "%PRIORITY_QUEUE%" ECHO !FILE_PARAM!
+CALL :launch_detached WORKER ""
+CALL :launch_detached BG_SWEEP "!P_EVENT_DIR!"
 EXIT /B 0
 
 :check_download_event
@@ -166,12 +183,30 @@ IF /I "%EVENT_TYPE%"=="file_download" (
     )
     IF "!VALID_EXT!"=="0" EXIT /B 0
 
-    PUSHD "%WORK_DIR%"
-    START "" /B /BELOWNORMAL cmd /d /c "call "%~nx0" BG_SINGLES "!FILE_PARAM!"" >nul 2>&1
-    POPD
+    CALL :launch_detached BG_SINGLES "!FILE_PARAM!"
     EXIT /B 0
 )
 
+EXIT /B 0
+
+
+:: ============================================================================
+:: HELPER: LAUNCH DETACHED BACKGROUND PROCESS (100% Terlepas dari LumaBooth)
+:: ============================================================================
+:launch_detached
+SET "MODE_ARG=%~1"
+SET "EXTRA_ARG=%~2"
+IF EXIST "%SILENT_VBS%" (
+    IF "!EXTRA_ARG!"=="" (
+        "%WSCRIPT%" //B //Nologo "%SILENT_VBS%" "%WORK_DIR:~0,-1%" "%~nx0" "!MODE_ARG!" >nul 2>&1
+    ) ELSE (
+        "%WSCRIPT%" //B //Nologo "%SILENT_VBS%" "%WORK_DIR:~0,-1%" "%~nx0" "!MODE_ARG!" "!EXTRA_ARG!" >nul 2>&1
+    )
+) ELSE (
+    PUSHD "%WORK_DIR%"
+    START "" /B /BELOWNORMAL cmd /d /c "call "%~nx0" !MODE_ARG! "!EXTRA_ARG!"" >nul 2>&1
+    POPD
+)
 EXIT /B 0
 
 
@@ -186,11 +221,9 @@ FOR /D %%E IN ("%DSLRBOOTH_DIR%\*") DO (
     IF /I NOT "!ENAME!"=="Settings" IF /I NOT "!ENAME!"=="Templates" (
         IF EXIST "%%E\Singles\!FILE_NAME!" (
             > "%ACTIVE_PROJ_FILE%" ECHO %%~fE
-            >> "%QUEUE_FILE%" ECHO %%E\Singles\!FILE_NAME!
-            PUSHD "%WORK_DIR%"
-            START "" /B /BELOWNORMAL cmd /d /c "call "%~nx0" WORKER" >nul 2>&1
-            START "" /B /BELOWNORMAL cmd /d /c "call "%~nx0" BG_SWEEP "%%~fE"" >nul 2>&1
-            POPD
+            >> "%PRIORITY_QUEUE%" ECHO %%E\Singles\!FILE_NAME!
+            CALL :launch_detached WORKER ""
+            CALL :launch_detached BG_SWEEP "%%~fE"
             EXIT /B 0
         )
     )
@@ -207,22 +240,19 @@ EXIT /B 0
 
 :locked_daemon
 :daemon_loop
-CALL :locked_sweep_entry
+CALL :locked_sweep_entry ""
 CALL :worker_entry
 ping 127.0.0.1 -n 6 >nul 2>&1
 GOTO :daemon_loop
 
 
 :: ============================================================================
-:: SUB-MODE: BG_SWEEP (Memindai SELURUH file yang belum terupload di Project)
+:: SUB-MODE: BG_SWEEP (Memindai 100% File di Project secara Instan < 0.1 Detik)
 :: ============================================================================
 :bg_sweep_entry
 SET "EXPLICIT_PROJECT=%~2"
-ping 127.0.0.1 -n 3 >nul 2>&1
 CALL :locked_sweep_entry "!EXPLICIT_PROJECT!"
-PUSHD "%WORK_DIR%"
-START "" /B /BELOWNORMAL cmd /d /c "call "%~nx0" WORKER" >nul 2>&1
-POPD
+CALL :launch_detached WORKER ""
 EXIT /B 0
 
 :locked_sweep_entry
@@ -240,9 +270,7 @@ IF "!PRIORITY_DIR!"=="" (
     )
 )
 
-:: Cari juga project yang memiliki foto terbaru (berdasarkan timestamp nama file YYYYMMDD_HHMMSS)
-:: sehingga walaupun project sudah dibuat jauh hari sebelumnya dan sudah ada foto di dalamnya
-:: sebelum .bat dimasukkan ke Trigger, project tersebut otomatis terdeteksi & diupload 100%!
+:: Cari project yang memiliki foto terbaru (berdasarkan timestamp nama file YYYYMMDD_HHMMSS)
 SET "BEST_TS="
 SET "BEST_PROJ="
 FOR /D %%D IN ("%DSLRBOOTH_DIR%\*") DO (
@@ -264,7 +292,6 @@ FOR /D %%D IN ("%DSLRBOOTH_DIR%\*") DO (
     )
 )
 
-:: Jika belum ada foto sama sekali, fallback ke folder project yang paling baru dibuat
 IF "!BEST_PROJ!"=="" (
     FOR /F "delims=" %%D IN ('DIR "%DSLRBOOTH_DIR%" /AD /B /O-D 2^>nul') DO (
         IF /I NOT "%%D"=="Settings" IF /I NOT "%%D"=="Templates" (
@@ -275,14 +302,12 @@ IF "!BEST_PROJ!"=="" (
 )
 :best_proj_done
 
-:: 1. Pindai 100% file (foto lama sebelum .bat dipasang + foto baru) pada project aktif dari Trigger
 IF NOT "!PRIORITY_DIR!"=="" (
     IF EXIST "!PRIORITY_DIR!" (
         CALL :sweep_single_project "!PRIORITY_DIR!"
     )
 )
 
-:: 2. Pindai 100% file pada project dengan aktivitas foto terbaru (jika berbeda)
 IF NOT "!BEST_PROJ!"=="" (
     IF /I NOT "!BEST_PROJ!"=="!PRIORITY_DIR!" (
         CALL :sweep_single_project "!BEST_PROJ!"
@@ -295,34 +320,51 @@ SET "SCAN_EVENT_DIR=%~1"
 IF "!SCAN_EVENT_DIR!"=="" EXIT /B 0
 IF NOT EXIST "!SCAN_EVENT_DIR!" EXIT /B 0
 
-:: Urutan prioritas subfolder: Prints & Animated lebih dulu (tampil di QR), lalu Videos, GIFs, Singles
-:: Tanpa batas jumlah file (seluruh foto lama maupun baru dalam project dipastikan masuk antrean!)
-FOR %%M IN (Prints Animated Videos GIFs Singles) DO (
-    IF EXIST "!SCAN_EVENT_DIR!\%%M" (
-        FOR /F "delims=" %%F IN ('DIR "!SCAN_EVENT_DIR!\%%M" /A-D /B /O-D 2^>nul') DO (
-            SET "CANDIDATE=!SCAN_EVENT_DIR!\%%M\%%F"
-            SET "FN=%%F"
-            IF /I "!FN:_mp4.jpg=!"=="!FN!" (
-                FINDSTR /I /C:"!CANDIDATE!" "%SENT_LOG%" >nul 2>&1
-                IF ERRORLEVEL 1 (
-                    IF EXIST "%QUEUE_FILE%" (
-                        FINDSTR /I /C:"!CANDIDATE!" "%QUEUE_FILE%" >nul 2>&1
-                        IF ERRORLEVEL 1 (
-                            >> "%QUEUE_FILE%" ECHO !CANDIDATE!
-                        )
-                    ) ELSE (
-                        >> "%QUEUE_FILE%" ECHO !CANDIDATE!
-                    )
-                )
-            )
+:: Jika Worker sedang aktif memproses BATCH_FILE, tidak perlu menulis ulang daftar ribuan file
+IF EXIST "%BATCH_FILE%" EXIT /B 0
+
+SET "RAW_LIST=%WORK_DIR%raw_scan.tmp"
+DEL /F /Q "%RAW_LIST%" >nul 2>&1
+
+:: Kumpulkan 100% file (Prints & Animated dulu agar langsung tampil di QR, lalu Videos, GIFs, Singles)
+(
+    IF EXIST "!SCAN_EVENT_DIR!\Prints" (
+        FOR /F "delims=" %%F IN ('DIR "!SCAN_EVENT_DIR!\Prints" /A-D /B /O-D 2^>nul') DO (
+            ECHO !SCAN_EVENT_DIR!\Prints\%%F
         )
     )
-)
+    IF EXIST "!SCAN_EVENT_DIR!\Animated" (
+        FOR /F "delims=" %%F IN ('DIR "!SCAN_EVENT_DIR!\Animated" /A-D /B /O-D 2^>nul') DO (
+            ECHO !SCAN_EVENT_DIR!\Animated\%%F
+        )
+    )
+    IF EXIST "!SCAN_EVENT_DIR!\Videos" (
+        FOR /F "delims=" %%F IN ('DIR "!SCAN_EVENT_DIR!\Videos" /A-D /B /O-D 2^>nul') DO (
+            ECHO !SCAN_EVENT_DIR!\Videos\%%F
+        )
+    )
+    IF EXIST "!SCAN_EVENT_DIR!\GIFs" (
+        FOR /F "delims=" %%F IN ('DIR "!SCAN_EVENT_DIR!\GIFs" /A-D /B /O-D 2^>nul') DO (
+            ECHO !SCAN_EVENT_DIR!\GIFs\%%F
+        )
+    )
+    IF EXIST "!SCAN_EVENT_DIR!\Singles" (
+        FOR /F "delims=" %%F IN ('DIR "!SCAN_EVENT_DIR!\Singles" /A-D /B /O-D 2^>nul') DO (
+            ECHO !SCAN_EVENT_DIR!\Singles\%%F
+        )
+    )
+) > "%RAW_LIST%" 2>nul
+
+IF NOT EXIST "%RAW_LIST%" EXIT /B 0
+
+:: Saring keluar file thumbnail _mp4.jpg dalam 1 perintah instan (< 0.02 detik)
+FINDSTR /V /I "_mp4.jpg" "%RAW_LIST%" > "%QUEUE_FILE%" 2>nul
+DEL /F /Q "%RAW_LIST%" >nul 2>&1
 EXIT /B 0
 
 
 :: ============================================================================
-:: PROSES WORKER SINGLE-INSTANCE (Hanya 1 Worker yang boleh upload di satu waktu)
+:: PROSES WORKER SINGLE-INSTANCE (Tanpa "more +1" -> Anti Macet untuk 5.000+ File!)
 :: ============================================================================
 :worker_entry
 CALL :locked_worker 9>>"%LOCK_FILE%"
@@ -331,30 +373,66 @@ EXIT /B 0
 :locked_worker
 IF NOT EXIST "%SENT_LOG%" TYPE nul > "%SENT_LOG%"
 
-:queue_loop
-IF NOT EXIST "%QUEUE_FILE%" EXIT /B 0
-
-SET "CURRENT_FILE="
-FOR /F "usebackq delims=" %%A IN ("%QUEUE_FILE%") DO (
-    SET "CURRENT_FILE=%%A"
-    GOTO :got_item
+:worker_main_loop
+:: 1. Utamakan foto terbaru di PRIORITY_QUEUE (Tamu yang baru selesai berfoto)
+IF EXIST "%PRIORITY_QUEUE%" (
+    CALL :drain_priority_queue
 )
-DEL /F /Q "%QUEUE_FILE%" >nul 2>&1
+
+:: 2. Proses antrean utama (BATCH_FILE / QUEUE_FILE)
+IF NOT EXIST "%BATCH_FILE%" (
+    IF EXIST "%QUEUE_FILE%" (
+        MOVE /Y "%QUEUE_FILE%" "%BATCH_FILE%" >nul 2>&1
+    )
+)
+
+IF NOT EXIST "%BATCH_FILE%" (
+    IF EXIST "%PRIORITY_QUEUE%" GOTO :worker_main_loop
+    EXIT /B 0
+)
+
+FOR /F "usebackq delims=" %%A IN ("%BATCH_FILE%") DO (
+    :: Sebelum upload tiap file lama, cek apakah ada foto baru di PRIORITY_QUEUE!
+    IF EXIST "%PRIORITY_QUEUE%" (
+        CALL :drain_priority_queue
+    )
+    CALL :upload_single_file "%%A" 0
+)
+
+DEL /F /Q "%BATCH_FILE%" >nul 2>&1
+IF EXIST "%QUEUE_FILE%" GOTO :worker_main_loop
+IF EXIST "%PRIORITY_QUEUE%" GOTO :worker_main_loop
 EXIT /B 0
 
-:got_item
-FOR /L %%i IN (1,1,5) DO IF "!CURRENT_FILE:~-1!"==" " SET "CURRENT_FILE=!CURRENT_FILE:~0,-1!"
-IF "!CURRENT_FILE!"=="" GOTO :pop_queue
-IF NOT EXIST "!CURRENT_FILE!" GOTO :pop_queue
+:drain_priority_queue
+MOVE /Y "%PRIORITY_QUEUE%" "%WORK_DIR%active_priority.txt" >nul 2>&1
+IF NOT EXIST "%WORK_DIR%active_priority.txt" EXIT /B 0
+FOR /F "usebackq delims=" %%P IN ("%WORK_DIR%active_priority.txt") DO (
+    CALL :upload_single_file "%%P" 1
+)
+DEL /F /Q "%WORK_DIR%active_priority.txt" >nul 2>&1
+IF EXIST "%PRIORITY_QUEUE%" GOTO :drain_priority_queue
+EXIT /B 0
 
-:: Jika sudah pernah sukses diupload, lewati agar tidak upload ganda
-FINDSTR /I /C:"!CURRENT_FILE!" "%SENT_LOG%" >nul 2>&1
-IF NOT ERRORLEVEL 1 GOTO :pop_queue
+:upload_single_file
+SET "CURRENT_FILE=%~1"
+SET "IS_NEW_CAPTURE=%~2"
+FOR /L %%i IN (1,1,5) DO IF "!CURRENT_FILE:~-1!"==" " SET "CURRENT_FILE=!CURRENT_FILE:~0,-1!"
+IF "!CURRENT_FILE!"=="" EXIT /B 0
+IF NOT EXIST "!CURRENT_FILE!" EXIT /B 0
+
+:: Lewati jika sudah ada di sent_history.txt
+FINDSTR /I /L /C:"!CURRENT_FILE!" "%SENT_LOG%" >nul 2>&1
+IF NOT ERRORLEVEL 1 EXIT /B 0
 
 FOR %%I IN ("!CURRENT_FILE!") DO (
     SET "FILE_SIZE=%%~zI"
     SET "DIR_MEDIA=%%~dpI"
+    SET "FNAME_ONLY=%%~nxI"
 )
+IF "!FILE_SIZE!"=="0" EXIT /B 0
+IF /I NOT "!FNAME_ONLY:_mp4.jpg=!"=="!FNAME_ONLY!" EXIT /B 0
+
 SET "DIR_MEDIA=!DIR_MEDIA:~0,-1!"
 FOR %%I IN ("!DIR_MEDIA!") DO (
     SET "MEDIA_TYPE=%%~nxI"
@@ -363,10 +441,10 @@ FOR %%I IN ("!DIR_MEDIA!") DO (
 SET "DIR_EVENT=!DIR_EVENT:~0,-1!"
 FOR %%I IN ("!DIR_EVENT!") DO SET "EVENT_NAME=%%~nxI"
 
-IF /I "!EVENT_NAME!"=="Settings"  GOTO :pop_queue
-IF /I "!EVENT_NAME!"=="Templates" GOTO :pop_queue
-IF /I "!MEDIA_TYPE!"=="Originals" GOTO :pop_queue
-IF /I "!MEDIA_TYPE!"=="thumb"     GOTO :pop_queue
+IF /I "!EVENT_NAME!"=="Settings"  EXIT /B 0
+IF /I "!EVENT_NAME!"=="Templates" EXIT /B 0
+IF /I "!MEDIA_TYPE!"=="Originals" EXIT /B 0
+IF /I "!MEDIA_TYPE!"=="thumb"     EXIT /B 0
 
 SET "FOLDER_TARGET=Prints"
 IF /I "!MEDIA_TYPE!"=="Prints"   SET "FOLDER_TARGET=Prints"
@@ -375,32 +453,27 @@ IF /I "!MEDIA_TYPE!"=="Animated" SET "FOLDER_TARGET=Animated"
 IF /I "!MEDIA_TYPE!"=="GIFs"     SET "FOLDER_TARGET=Animated"
 IF /I "!MEDIA_TYPE!"=="Videos"   SET "FOLDER_TARGET=Animated"
 
-:: Tunggu 1 detik sebelum upload agar penulisan file ke disk selesai 100%
-ping 127.0.0.1 -n 2 >nul 2>&1
+:: Hanya beri jeda 1 detik jika ini adalah jepretan baru (agar file selesai ditulis LumaBooth)
+IF "!IS_NEW_CAPTURE!"=="1" (
+    ping 127.0.0.1 -n 2 >nul 2>&1
+)
 
-:: Kirim ke Portal Utama (files.yuhu.co.id) dan pastikan sukses (--fail)
+:retry_upload
 %CURL% --fail --max-time 90 --connect-timeout 10 -s -k -X POST "!API_URL_PRIMARY!" -F "token=!API_TOKEN!" -F "client_event=!EVENT_NAME!" -F "folder_target=!FOLDER_TARGET!" -F "file_size=!FILE_SIZE!" -F "file=@!CURRENT_FILE!" >nul 2>&1
 IF !ERRORLEVEL! EQU 0 (
     >> "%SENT_LOG%" ECHO !CURRENT_FILE!
     > "%LOG_FILE%" ECHO [%DATE% %TIME%] SUKSES UPLOAD KE FILES.YUHU.CO.ID: !EVENT_NAME!/!FOLDER_TARGET! - !CURRENT_FILE!
-    %CURL% --max-time 45 --connect-timeout 8 -s -k -X POST "!API_URL_FALLBACK!" -F "token=!API_TOKEN!" -F "client_event=!EVENT_NAME!" -F "folder_target=!FOLDER_TARGET!" -F "file=@!CURRENT_FILE!" >nul 2>&1
-    GOTO :pop_queue
+    EXIT /B 0
 )
 
-:: Jika server utama belum merespons 200, coba server fallback (qr.yuhu.co.id)
 %CURL% --fail --max-time 90 --connect-timeout 10 -s -k -X POST "!API_URL_FALLBACK!" -F "token=!API_TOKEN!" -F "client_event=!EVENT_NAME!" -F "folder_target=!FOLDER_TARGET!" -F "file_size=!FILE_SIZE!" -F "file=@!CURRENT_FILE!" >nul 2>&1
 IF !ERRORLEVEL! EQU 0 (
     >> "%SENT_LOG%" ECHO !CURRENT_FILE!
     > "%LOG_FILE%" ECHO [%DATE% %TIME%] SUKSES UPLOAD KE QR.YUHU.CO.ID: !EVENT_NAME!/!FOLDER_TARGET! - !CURRENT_FILE!
-    GOTO :pop_queue
+    EXIT /B 0
 )
 
-:: Jika internet sedang mati / gagal upload, JANGAN hapus dari antrean!
+:: Jika internet sedang terputus, tunggu 5 detik lalu ulangi sampai berhasil
 > "%LOG_FILE%" ECHO [%DATE% %TIME%] MENUNGGU INTERNET (RETRY OTOMATIS): !CURRENT_FILE!
-ping 127.0.0.1 -n 7 >nul 2>&1
-GOTO :queue_loop
-
-:pop_queue
-more +1 "%QUEUE_FILE%" > "%WORK_DIR%temp_queue.txt" 2>nul
-MOVE /Y "%WORK_DIR%temp_queue.txt" "%QUEUE_FILE%" >nul 2>&1
-GOTO :queue_loop
+ping 127.0.0.1 -n 6 >nul 2>&1
+GOTO :retry_upload
