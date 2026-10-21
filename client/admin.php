@@ -236,7 +236,7 @@ if (!empty($selected_client) && is_dir($base_dir . $selected_client)) {
 
 $sessions_map = []; $anchor_ts = [];
 $exTs = function($fn, $fb) {
-    if (preg_match('/^(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})/', $fn, $m)) return strtotime("{$m[1]}-{$m[2]}-{$m[3]} {$m[4]}:{$m[5]}:{$m[6]}");
+    if (preg_match('/(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})/', $fn, $m)) return strtotime("{$m[1]}-{$m[2]}-{$m[3]} {$m[4]}:{$m[5]}:{$m[6]}");
     return $fb;
 };
 

@@ -12,7 +12,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 require_once '../config.php';
 
 // Token keamanan default untuk LumaBooth Sync Agent / Operator
-$API_SECRET_KEY = 'yuhu8080';
+$VALID_API_KEYS = ['yuhu8080', 'YuhuSecretToken2026', '8080'];
 
 // Helper untuk mengambil API Key dari Header, POST, atau GET
 function getRequestApiKey() {
@@ -23,12 +23,14 @@ function getRequestApiKey() {
     }
     if (isset($_SERVER['HTTP_X_API_KEY'])) return trim($_SERVER['HTTP_X_API_KEY']);
     if (isset($_POST['api_key'])) return trim($_POST['api_key']);
+    if (isset($_POST['token'])) return trim($_POST['token']);
     if (isset($_GET['api_key'])) return trim($_GET['api_key']);
+    if (isset($_GET['token'])) return trim($_GET['token']);
     return '';
 }
 
 $req_key = getRequestApiKey();
-if ($req_key !== $API_SECRET_KEY) {
+if (!in_array($req_key, $VALID_API_KEYS, true)) {
     http_response_code(403);
     exit;
 }
@@ -43,6 +45,29 @@ if ($action === 'ping') {
         'status' => 'success',
         'message' => 'pong',
         'timestamp' => time()
+    ]);
+    exit;
+}
+
+// =========================================================================
+// 0b. ACTION: register_event (Otomatis buat link & client dari nama project LumaBooth)
+// =========================================================================
+if ($action === 'register_event') {
+    $client_event = trim($_REQUEST['client_event'] ?? '');
+    if ($client_event === '') {
+        http_response_code(400);
+        echo json_encode(['status' => 'error', 'message' => 'client_event kosong']);
+        exit;
+    }
+    $synced = ensureLumaboothEventInDb($pdo, $base_url, $client_event, true);
+    $year_ev = $synced ? date('Y', strtotime($synced['tanggal_event'])) : date('Y');
+    $clean_ev = $synced ? preg_replace('/\s+/', '', $synced['nama_client']) : preg_replace('/\s+/', '', $client_event);
+    echo json_encode([
+        'status' => 'success',
+        'event' => $client_event,
+        'client' => $synced,
+        'direct_link' => rtrim($base_url, '/') . '/' . $year_ev . '/' . $clean_ev,
+        'gallery_link' => rtrim($base_url, '/') . '/client/' . rawurlencode($client_event)
     ]);
     exit;
 }

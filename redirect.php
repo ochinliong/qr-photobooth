@@ -19,18 +19,22 @@ if (preg_match('#/([0-9]{4})/([^/]+?)/?$#', $uri_path, $matches)) {
 $search_slug = strtolower(preg_replace('/\s+/', '', $custom_slug));
 $search_alnum = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $custom_slug));
 
-// Helper untuk meroute klien ke Galeri Internal (/client/?client=...) atau Link Eksternal
+// Helper untuk meroute klien ke Galeri Internal (/client/<FolderName>) atau Link Eksternal
 function routeToClientDestination($c, $base_url) {
     $target = trim($c['folder_foto_path'] ?? '');
 
-    // Cek apakah sudah ada folder acara di /client/photos/ yang cocok dengan nama klien
+    // 1. Cek apakah ada folder di /client/photos/ yang cocok dengan folder_foto_path atau nama_client
     $photos_dir = __DIR__ . '/client/photos';
     $matched_photo_folder = '';
+    $folder_from_url = extractLumaboothFolderFromUrl($target);
+    $hint_alnum = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $folder_from_url));
     $client_alnum = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $c['nama_client']));
-    if (is_dir($photos_dir) && $client_alnum !== '') {
+
+    if (is_dir($photos_dir)) {
         foreach (scandir($photos_dir) as $d) {
             if ($d !== '.' && $d !== '..' && is_dir($photos_dir . '/' . $d)) {
-                if (strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $d)) === $client_alnum) {
+                $d_alnum = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $d));
+                if ($d_alnum !== '' && ($d_alnum === $hint_alnum || $d_alnum === $client_alnum)) {
                     $matched_photo_folder = $d;
                     break;
                 }
@@ -38,33 +42,47 @@ function routeToClientDestination($c, $base_url) {
         }
     }
 
-    // Jika target diarahkan ke galeri internal (/client/ atau kosong) ATAU ditemukan folder LumaBooth di /client/photos/
-    // dan target bukan link pihak ketiga (seperti fotoshare / drive):
+    // 2. Jika target adalah URL pihak ketiga (seperti fotoshare / youtube / drive)
     $is_external_thirdparty = preg_match('#^https?://#i', $target)
         && stripos($target, 'files.yuhu.co.id/client') === false
         && stripos($target, 'qr.yuhu.co.id/client') === false;
 
-    if (!$is_external_thirdparty) {
-        $folder_param = $matched_photo_folder !== '' ? $matched_photo_folder : $c['nama_client'];
-        $gallery_url = rtrim($base_url, '/') . '/client/?client=' . rawurlencode($folder_param);
+    if ($is_external_thirdparty) {
+        header("Location: " . $target, true, 302);
+        exit;
+    }
+
+    // 3. Jika folder ditemukan di /client/photos/ lokal pada files.yuhu.co.id, arahkan ke galeri internal
+    if ($matched_photo_folder !== '') {
+        $gallery_url = rtrim($base_url, '/') . '/client/' . rawurlencode($matched_photo_folder);
         header("Location: " . $gallery_url, true, 302);
         exit;
     }
 
-    header("Location: " . $target, true, 302);
+    // 4. Jika target sudah berupa URL lengkap (misal acara lama di qr.yuhu.co.id/client/...), arahkan ke sana
+    if (preg_match('#^https?://#i', $target)) {
+        header("Location: " . $target, true, 302);
+        exit;
+    }
+
+    // 5. Fallback ke galeri internal berdasarkan nama folder / nama klien
+    $folder_param = $folder_from_url !== '' ? $folder_from_url : str_replace(' ', '_', $c['nama_client']);
+    $gallery_url = rtrim($base_url, '/') . '/client/' . rawurlencode($folder_param);
+    header("Location: " . $gallery_url, true, 302);
     exit;
 }
 
 if (!empty($year) && !empty($search_slug)) {
     // 1. Cari di database yang tahunnya cocok
-    $stmt = $pdo->prepare("SELECT * FROM clients WHERE YEAR(tanggal_event) = ?");
+    $stmt = $pdo->prepare("SELECT * FROM clients WHERE YEAR(tanggal_event) = ? ORDER BY id DESC");
     $stmt->execute([$year]);
     $clients = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     foreach ($clients as $c) {
         $client_clean_name = strtolower(preg_replace('/\s+/', '', $c['nama_client']));
         $client_alnum = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $c['nama_client']));
-        if ($client_clean_name === $search_slug || $client_alnum === $search_alnum || strtolower($c['slug']) === $search_slug) {
+        $folder_alnum = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', extractLumaboothFolderFromUrl($c['folder_foto_path'] ?? '')));
+        if ($client_clean_name === $search_slug || $client_alnum === $search_alnum || ($folder_alnum !== '' && $folder_alnum === $search_alnum) || strtolower($c['slug']) === $search_slug) {
             routeToClientDestination($c, $base_url);
         }
     }
@@ -74,7 +92,8 @@ if (!empty($year) && !empty($search_slug)) {
     foreach ($stmt_all->fetchAll(PDO::FETCH_ASSOC) as $c) {
         $client_clean_name = strtolower(preg_replace('/\s+/', '', $c['nama_client']));
         $client_alnum = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $c['nama_client']));
-        if ($client_clean_name === $search_slug || $client_alnum === $search_alnum || strtolower($c['slug']) === $search_slug) {
+        $folder_alnum = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', extractLumaboothFolderFromUrl($c['folder_foto_path'] ?? '')));
+        if ($client_clean_name === $search_slug || $client_alnum === $search_alnum || ($folder_alnum !== '' && $folder_alnum === $search_alnum) || strtolower($c['slug']) === $search_slug) {
             routeToClientDestination($c, $base_url);
         }
     }
@@ -85,7 +104,7 @@ if (!empty($year) && !empty($search_slug)) {
         foreach (scandir($photos_dir) as $d) {
             if ($d !== '.' && $d !== '..' && is_dir($photos_dir . '/' . $d)) {
                 if (strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $d)) === $search_alnum) {
-                    header("Location: " . rtrim($base_url, '/') . '/client/?client=' . rawurlencode($d), true, 302);
+                    header("Location: " . rtrim($base_url, '/') . '/client/' . rawurlencode($d), true, 302);
                     exit;
                 }
             }

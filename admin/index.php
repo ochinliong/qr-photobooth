@@ -78,6 +78,23 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
 // Handle Delete Client
 if (isset($_GET['delete'])) {
     $id = $_GET['delete'];
+    $stmt_find = $pdo->prepare("SELECT * FROM clients WHERE id = ?");
+    $stmt_find->execute([$id]);
+    $del_client = $stmt_find->fetch(PDO::FETCH_ASSOC);
+    if ($del_client) {
+        $photos_root = '../client/photos';
+        if (is_dir($photos_root)) {
+            $cand_folder = extractLumaboothFolderFromUrl($del_client['folder_foto_path'] ?? '');
+            $cand_clean = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $cand_folder ?: $del_client['nama_client']));
+            foreach (scandir($photos_root) as $d) {
+                if ($d !== '.' && $d !== '..' && is_dir($photos_root . '/' . $d)) {
+                    if ($cand_clean !== '' && strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $d)) === $cand_clean) {
+                        @file_put_contents($photos_root . '/' . $d . '/.deleted_by_admin', date('Y-m-d H:i:s'));
+                    }
+                }
+            }
+        }
+    }
     $stmt = $pdo->prepare("DELETE FROM clients WHERE id = ?");
     $stmt->execute([$id]);
     header("Location: index.php");
@@ -93,15 +110,25 @@ function buildDirectLink($c, $base_url) {
     return rtrim($base_url, '/') . '/' . $year . '/' . $clean_name;
 }
 
+// Helper menentukan nama folder LumaBooth dari data klien
+function resolveClientFolder($c) {
+    $from_url = extractLumaboothFolderFromUrl($c['folder_foto_path'] ?? '');
+    if ($from_url !== '') return $from_url;
+    return str_replace(' ', '_', $c['nama_client']);
+}
+
 // Helper hitung foto lokal di Portal Gallery (/client/photos/{NamaEvent})
-function countLocalPhotos($nama_client) {
+function countLocalPhotos($c) {
     $photos_root = '../client/photos';
     if (!is_dir($photos_root)) return 0;
-    $clean_target = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $nama_client));
+    $folder_hint = resolveClientFolder($c);
+    $clean_hint = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $folder_hint));
+    $clean_name = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $c['nama_client']));
     $matched_dir = '';
     foreach (scandir($photos_root) as $d) {
         if ($d !== '.' && $d !== '..' && is_dir($photos_root . '/' . $d)) {
-            if (strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $d)) === $clean_target && $clean_target !== '') {
+            $d_clean = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $d));
+            if ($d_clean !== '' && ($d_clean === $clean_hint || $d_clean === $clean_name)) {
                 $matched_dir = $photos_root . '/' . $d;
                 break;
             }
@@ -220,19 +247,32 @@ function countLocalPhotos($nama_client) {
                     <tbody class="divide-y divide-gray-200">
                         <?php foreach($clients as $c): 
                             $direct_link = buildDirectLink($c, $base_url);
-                            $photo_count = countLocalPhotos($c['nama_client']);
-                            $internal_gallery_url = rtrim($base_url, '/') . '/client/?client=' . rawurlencode(str_replace(' ', '_', $c['nama_client']));
+                            $photo_count = countLocalPhotos($c);
+                            $folder_c = resolveClientFolder($c);
+                            $internal_gallery_url = rtrim($base_url, '/') . '/client/' . rawurlencode($folder_c);
+                            $is_auto_lokasi = (trim($c['lokasi'] ?? '') === '' || trim($c['lokasi'] ?? '') === '-');
                         ?>
                         <tr>
                             <td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900">
                                 <?= htmlspecialchars($c['nama_client']) ?>
-                                <div class="mt-1">
+                                <div class="mt-1 flex items-center gap-1.5 flex-wrap">
                                     <a href="<?= htmlspecialchars($internal_gallery_url) ?>" target="_blank" class="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full <?= $photo_count > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600' ?>">
                                         📷 <?= $photo_count ?> File di Portal Gallery
                                     </a>
+                                    <?php if ($is_auto_lokasi): ?>
+                                        <a href="edit.php?id=<?= $c['id'] ?>" class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 hover:bg-amber-200">
+                                            ⚡ Auto LumaBooth (Klik Edit Data)
+                                        </a>
+                                    <?php endif; ?>
                                 </div>
                             </td>
-                            <td class="px-6 py-4 whitespace-pre-wrap text-sm leading-snug"><?= htmlspecialchars($c['lokasi'] ?? '-') ?></td>
+                            <td class="px-6 py-4 whitespace-pre-wrap text-sm leading-snug">
+                                <?php if ($is_auto_lokasi): ?>
+                                    <a href="edit.php?id=<?= $c['id'] ?>" class="text-xs text-amber-600 font-semibold hover:underline">+ Isi Lokasi Acara</a>
+                                <?php else: ?>
+                                    <?= htmlspecialchars($c['lokasi']) ?>
+                                <?php endif; ?>
+                            </td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm"><?= $c['tanggal_event'] ?> <br> <span class="text-gray-500"><?= $c['jam_mulai'] ?> - <?= $c['jam_selesai'] ?></span></td>
                             <td class="px-6 py-4 text-sm">
                                 <div class="mb-1.5">

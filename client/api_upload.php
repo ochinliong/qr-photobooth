@@ -83,75 +83,23 @@ if (!is_dir($event_dir)) {
 
 // =========================================================================
 // AUTO-SYNC DENGAN DATABASE PORTAL QR (photobooth_db -> tabel clients)
+// Otomatis membuat link di files.yuhu.co.id sesuai nama project LumaBooth!
 // =========================================================================
-// 1. Cari apakah klien sudah ada di database (cocokkan nama_client / slug)
-$matched_client_db = null;
-try {
-    $stmt_all = $pdo->query("SELECT * FROM clients ORDER BY id DESC");
-    $all_db_clients = $stmt_all->fetchAll(PDO::FETCH_ASSOC);
-    foreach ($all_db_clients as $row) {
-        $db_clean_name = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $row['nama_client']));
-        $db_clean_slug = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $row['slug']));
-        if ($req_clean !== '' && ($db_clean_name === $req_clean || $db_clean_slug === $req_clean || strpos($db_clean_name, $req_clean) !== false || strpos($req_clean, $db_clean_name) !== false)) {
-            $matched_client_db = $row;
-            break;
-        }
-    }
+$synced_client = ensureLumaboothEventInDb($pdo, $base_url, $matched_folder, true);
 
-    $internal_gallery_link = rtrim($base_url, '/') . '/client/?client=' . rawurlencode($matched_folder);
-
-    if ($matched_client_db) {
-        // Jika folder_foto_path masih kosong atau sudah mengarah ke /client/ lokal, pastikan tersinkronisasi
-        $cur_path = trim($matched_client_db['folder_foto_path'] ?? '');
-        if (empty($cur_path) || stripos($cur_path, '/client/') !== false || stripos($cur_path, 'uploads/gallery/') !== false) {
-            $upd = $pdo->prepare("UPDATE clients SET folder_foto_path = ? WHERE id = ?");
-            $upd->execute([$internal_gallery_link, $matched_client_db['id']]);
-        }
-    } else {
-        // Jika admin belum sempat menginput di dashboard, otomatis buatkan entri Live Event hari ini!
-        $readable_name = trim(str_replace('_', ' ', $matched_folder));
-        $slug = strtolower(trim(preg_replace('/[^A-Za-z0-9-]+/', '-', $readable_name))) . '-' . time();
-        $tanggal_event = date('Y-m-d');
-        $jam_mulai = date('H:00:00');
-        $jam_selesai = date('H:i:s', strtotime('+5 hours'));
-        $lokasi_default = 'YUHU Photobooth Live Event';
-
-        // Buat QR Code otomatis untuk Direct Link
-        $qr_folder_path = __DIR__ . '/../uploads/qrcodes';
-        if (!file_exists($qr_folder_path)) {
-            @mkdir($qr_folder_path, 0777, true);
-        }
-        $tahun_event = date('Y');
-        $nama_clean = preg_replace('/\s+/', '', $readable_name);
-        $custom_direct_link = rtrim($base_url, '/') . '/' . $tahun_event . '/' . $nama_clean;
-        $qr_api = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' . urlencode($custom_direct_link);
-        $qr_filename = $slug . '.png';
-        $qr_filepath = $qr_folder_path . '/' . $qr_filename;
-
-        if (function_exists('curl_init')) {
-            $ch = curl_init($qr_api);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 5);
-            $img = @curl_exec($ch);
-            if ($img) @file_put_contents($qr_filepath, $img);
-            curl_close($ch);
-        }
-
-        $ins = $pdo->prepare("INSERT INTO clients (nama_client, slug, lokasi, tanggal_event, jam_mulai, jam_selesai, qr_code_path, folder_foto_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-        $ins->execute([
-            $readable_name,
-            $slug,
-            $lokasi_default,
-            $tanggal_event,
-            $jam_mulai,
-            $jam_selesai,
-            'uploads/qrcodes/' . $qr_filename,
-            $internal_gallery_link
-        ]);
-    }
-} catch (Exception $e) {
-    // Tetap lanjutkan penyimpanan foto meskipun sinkronisasi DB mengalami kendala
+// Jika hanya request registrasi folder event tanpa upload file
+if (isset($_REQUEST['action']) && $_REQUEST['action'] === 'register_event') {
+    $year_ev = $synced_client ? date('Y', strtotime($synced_client['tanggal_event'])) : date('Y');
+    $clean_ev = $synced_client ? preg_replace('/\s+/', '', $synced_client['nama_client']) : preg_replace('/\s+/', '', $matched_folder);
+    echo json_encode([
+        "status" => "success",
+        "message" => "Event $matched_folder terdaftar otomatis di Portal QR",
+        "event" => $matched_folder,
+        "client" => $synced_client,
+        "direct_link" => rtrim($base_url, '/') . '/' . $year_ev . '/' . $clean_ev,
+        "gallery_link" => rtrim($base_url, '/') . '/client/' . rawurlencode($matched_folder)
+    ]);
+    exit;
 }
 
 // 4. Cek File yang masuk

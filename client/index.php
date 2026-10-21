@@ -18,7 +18,8 @@ try {
     foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
         $c_name = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $row['nama_client']));
         $c_slug = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $row['slug']));
-        if ($req_clean !== '' && ($c_name === $req_clean || $c_slug === $req_clean)) {
+        $c_folder = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', extractLumaboothFolderFromUrl($row['folder_foto_path'] ?? '')));
+        if ($req_clean !== '' && ($c_name === $req_clean || $c_slug === $req_clean || ($c_folder !== '' && $c_folder === $req_clean))) {
             $db_client = $row;
             break;
         }
@@ -33,10 +34,12 @@ if (!is_dir($photos_root)) {
 
 $resolved_folder = $client_name;
 if (!is_dir($photos_root . '/' . $resolved_folder)) {
-    // Coba cocokkan dengan nama_client dari DB jika tadi dipanggil pakai slug
+    // Coba cocokkan dengan nama_client / folder_foto_path dari DB jika tadi dipanggil pakai slug
     $search_candidates = [$req_clean];
     if ($db_client) {
         $search_candidates[] = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $db_client['nama_client']));
+        $f_hint = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', extractLumaboothFolderFromUrl($db_client['folder_foto_path'] ?? '')));
+        if ($f_hint !== '') $search_candidates[] = $f_hint;
     }
     $dirs = @scandir($photos_root) ?: [];
     foreach ($dirs as $dir) {
@@ -55,7 +58,7 @@ $target_dir = $photos_root . '/' . $resolved_folder;
 // Membaca Judul Custom & Pengaturan Visibility (Jika ada di config.json atau Database)
 $display_title = $db_client ? $db_client['nama_client'] : str_replace('_', ' ', $resolved_folder);
 $display_subtitle = "Terima kasih telah merayakan bersama kami!";
-if ($db_client && !empty($db_client['lokasi'])) {
+if ($db_client && !empty(trim($db_client['lokasi'] ?? '')) && trim($db_client['lokasi']) !== '-') {
     $display_subtitle = str_replace(["\r\n", "\n"], ' • ', $db_client['lokasi']);
 }
 $display_tab_title = "Galeri - " . $display_title;
@@ -143,7 +146,7 @@ $sessions_map = [];
 $anchor_timestamps = [];
 
 $extractTs = function($fname, $fallback_time) {
-    if (preg_match('/^(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})/', $fname, $m)) {
+    if (preg_match('/(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})/', $fname, $m)) {
         return strtotime("{$m[1]}-{$m[2]}-{$m[3]} {$m[4]}:{$m[5]}:{$m[6]}");
     }
     return $fallback_time;

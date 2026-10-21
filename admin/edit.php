@@ -20,12 +20,21 @@ if (!$client) {
     exit;
 }
 
+$lumabooth_folder = extractLumaboothFolderFromUrl($client['folder_foto_path'] ?? '');
+if ($lumabooth_folder === '') {
+    $lumabooth_folder = str_replace(' ', '_', $client['nama_client']);
+}
+$default_gallery_link = rtrim($base_url, '/') . '/client/' . rawurlencode($lumabooth_folder);
+
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    $nama_client = $_POST['nama_client'];
-    $lokasi = $_POST['lokasi'];
+    $nama_client = trim($_POST['nama_client']);
+    $lokasi = trim($_POST['lokasi'] ?? '');
+    if ($lokasi === '') {
+        $lokasi = '-';
+    }
     $link_galeri = trim($_POST['folder_foto_path'] ?? '');
     if (empty($link_galeri)) {
-        $link_galeri = 'uploads/gallery/' . $client['slug'];
+        $link_galeri = $default_gallery_link;
     }
     $tanggal_event = $_POST['tanggal_event'];
     $jam_mulai = $_POST['jam_mulai'];
@@ -82,15 +91,15 @@ $init_direct_link = rtrim($base_url, '/') . '/' . $init_year . '/' . $init_clean
                 <input type="text" name="nama_client" id="input_nama" value="<?= htmlspecialchars($client['nama_client']) ?>" required class="mt-1 w-full px-3 py-2 border rounded-md focus:border-blue-500 focus:outline-none" oninput="updatePreviewLink()">
             </div>
             <div>
-                <label class="block text-sm font-medium text-gray-700">Lokasi Acara</label>
-                <textarea name="lokasi" required class="mt-1 w-full px-3 py-2 border rounded-md focus:border-blue-500 focus:outline-none" rows="2"><?= htmlspecialchars($client['lokasi'] ?? '') ?></textarea>
+                <label class="block text-sm font-medium text-gray-700">Lokasi Acara <span class="text-xs text-gray-400 font-normal">(Bisa diisi manual kapan saja)</span></label>
+                <textarea name="lokasi" placeholder="Baris 1: Nama Gedung&#10;Baris 2: Nama Kota" class="mt-1 w-full px-3 py-2 border rounded-md focus:border-blue-500 focus:outline-none" rows="2"><?= htmlspecialchars(($client['lokasi'] ?? '') === '-' ? '' : ($client['lokasi'] ?? '')) ?></textarea>
             </div>
             <div>
-                <label class="block text-sm font-medium text-gray-700">Tujuan Galeri (Kosongkan untuk Portal Gallery LumaBooth)</label>
-                <input type="text" name="folder_foto_path" id="input_folder" value="<?= htmlspecialchars($client['folder_foto_path']) ?>" placeholder="Kosongkan untuk Galeri Internal: uploads/gallery/<?= htmlspecialchars($client['slug']) ?>" class="mt-1 w-full px-3 py-2 border rounded-md focus:border-blue-500 focus:outline-none">
+                <label class="block text-sm font-medium text-gray-700">Tujuan Galeri (Folder LumaBooth / URL)</label>
+                <input type="text" name="folder_foto_path" id="input_folder" value="<?= htmlspecialchars($client['folder_foto_path']) ?>" placeholder="Default: <?= htmlspecialchars($default_gallery_link) ?>" class="mt-1 w-full px-3 py-2 border rounded-md focus:border-blue-500 focus:outline-none">
                 <div class="mt-1.5 flex items-center gap-2">
-                    <button type="button" onclick="document.getElementById('input_folder').value = 'uploads/gallery/<?= htmlspecialchars($client['slug']) ?>'" class="text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded font-semibold hover:bg-emerald-100">
-                        Gunakan Portal Gallery Website Ini (LumaBooth Sync)
+                    <button type="button" onclick="document.getElementById('input_folder').value = '<?= htmlspecialchars($default_gallery_link, ENT_QUOTES) ?>'" class="text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded font-semibold hover:bg-emerald-100">
+                        Gunakan Portal Gallery LumaBooth (<?= htmlspecialchars($lumabooth_folder) ?>)
                     </button>
                 </div>
                 <p class="text-xs text-blue-600 mt-2 font-medium" id="preview_direct_link">

@@ -1,8 +1,8 @@
 <?php
 require_once 'config.php';
 
-// Ambil semua klien
-$stmt = $pdo->query("SELECT * FROM clients");
+// Ambil semua klien (termasuk yang baru otomatis disinkronkan dari LumaBooth)
+$stmt = $pdo->query("SELECT * FROM clients ORDER BY id DESC");
 $all_clients = $stmt->fetchAll();
 
 $active_clients = [];
@@ -86,6 +86,7 @@ foreach ($all_clients as $client) {
                         $year_c = date('Y', strtotime($c['tanggal_event']));
                         $clean_name_c = preg_replace('/\s+/', '', $c['nama_client']);
                         $direct_url_c = rtrim($base_url, '/') . '/' . $year_c . '/' . $clean_name_c;
+                        $has_lokasi = (trim($c['lokasi'] ?? '') !== '' && trim($c['lokasi'] ?? '') !== '-');
                     ?>
                         <div class="block relative p-5 bg-gray-50 border border-gray-100 rounded-xl hover:bg-blue-50/50 transition-all duration-300 shadow-sm">
                             <div class="flex flex-col flex-grow">
@@ -99,12 +100,14 @@ foreach ($all_clients as $client) {
                                 
                                 <!-- Meta Info: Lokasi & Tanggal -->
                                 <div class="flex flex-col text-xs text-gray-500 mt-2 space-y-1.5 mb-5">
+                                    <?php if ($has_lokasi): ?>
                                     <div class="flex items-start">
                                         <svg class="w-3.5 h-3.5 mr-1.5 flex-shrink-0 text-red-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.242-4.243a8 8 0 1111.314 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
                                         <div class="leading-relaxed">
-                                            <?= nl2br(htmlspecialchars($c['lokasi'] ?? 'Lokasi Acara')) ?>
+                                            <?= nl2br(htmlspecialchars($c['lokasi'])) ?>
                                         </div>
                                     </div>
+                                    <?php endif; ?>
                                     <div class="flex items-start">
                                         <svg class="w-3.5 h-3.5 mr-1.5 flex-shrink-0 text-blue-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                                         <div class="leading-relaxed">
