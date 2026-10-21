@@ -280,7 +280,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
     <link rel="icon" href="https://qr.yuhu.co.id/2025/icon.png" type="image/png">
     <link rel="apple-touch-icon" href="https://qr.yuhu.co.id/2025/icon.png">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Poppins:wght@700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=<?php echo @filemtime(__DIR__ . '/style.css') ?: '2'; ?>">
     <script>
         let gallerySessions = <?php echo json_encode($sessions); ?>;
         let totalFilesCount = <?php echo count($files_data); ?>;
@@ -332,6 +332,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
             <a class="nav-btn next-btn" onclick="changeSlide(1)">&#10095;</a>
 
             <div class="modal-actions">
+                <div class="slide-dots" id="slideDots"></div>
                 <a id="downloadBtn" href="#" download class="btn-download">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                     Download File Ini
@@ -341,7 +342,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
         </div>
     </div>
 
-    <script src="script.js"></script>
+    <script src="script.js?v=<?php echo @filemtime(__DIR__ . '/script.js') ?: '2'; ?>"></script>
     <script>
         // Auto-Sync Real-time setiap 8 detik: otomatis memunculkan foto baru atau menyembunyikan foto yang di-hide Admin tanpa refresh
         setInterval(async () => {
