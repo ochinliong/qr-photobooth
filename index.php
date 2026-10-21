@@ -10,17 +10,33 @@ $active_clients = [];
 $now = new DateTime('now', new DateTimeZone('Asia/Jakarta'));
 
 foreach ($all_clients as $client) {
-    $start = new DateTime($client['tanggal_event'] . ' ' . $client['jam_mulai'], new DateTimeZone('Asia/Jakarta'));
-    $end   = new DateTime($client['tanggal_event'] . ' ' . $client['jam_selesai'], new DateTimeZone('Asia/Jakarta'));
-    
-    $visible_start = clone $start;
-    $visible_start->modify('-1 hour');
-    
-    $visible_end = clone $end;
-    $visible_end->modify('+1 hour');
-    
-    if ($now >= $visible_start && $now <= $visible_end) {
-        $active_clients[] = $client;
+    // Project baru otomatis dari LumaBooth (atau yang belum diatur tanggal & jam acaranya)
+    // TIDAK AKAN PERNAH muncul di Live Events tamu files.yuhu.co.id
+    if (empty($client['tanggal_event']) || empty($client['jam_mulai']) || empty($client['jam_selesai']) || 
+        $client['tanggal_event'] === '0000-00-00' || $client['tanggal_event'] === '1970-01-01') {
+        continue;
+    }
+
+    // Abaikan juga jika jam masih default LumaBooth 00:00 - 23:59 dan lokasi belum diisi
+    if (($client['jam_mulai'] === '00:00:00' && $client['jam_selesai'] === '23:59:00') && (trim($client['lokasi'] ?? '') === '' || trim($client['lokasi'] ?? '') === '-')) {
+        continue;
+    }
+
+    try {
+        $start = new DateTime($client['tanggal_event'] . ' ' . $client['jam_mulai'], new DateTimeZone('Asia/Jakarta'));
+        $end   = new DateTime($client['tanggal_event'] . ' ' . $client['jam_selesai'], new DateTimeZone('Asia/Jakarta'));
+        
+        $visible_start = clone $start;
+        $visible_start->modify('-1 hour');
+        
+        $visible_end = clone $end;
+        $visible_end->modify('+1 hour');
+        
+        if ($now >= $visible_start && $now <= $visible_end) {
+            $active_clients[] = $client;
+        }
+    } catch (Exception $e) {
+        continue;
     }
 }
 ?>

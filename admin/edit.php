@@ -37,12 +37,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if (empty($link_galeri)) {
         $link_galeri = $default_gallery_link;
     }
-    $tanggal_event = $_POST['tanggal_event'];
-    $jam_mulai = $_POST['jam_mulai'];
-    $jam_selesai = $_POST['jam_selesai'];
+    $tanggal_event = !empty($_POST['tanggal_event']) ? $_POST['tanggal_event'] : null;
+    $jam_mulai = !empty($_POST['jam_mulai']) ? $_POST['jam_mulai'] : null;
+    $jam_selesai = !empty($_POST['jam_selesai']) ? $_POST['jam_selesai'] : null;
 
     // Buat Direct Link Otomatis sesuai Tahun & Nama Klien (tanpa spasi)
-    $tahun_event = date('Y', strtotime($tanggal_event));
+    $tahun_event = $tanggal_event ? date('Y', strtotime($tanggal_event)) : date('Y');
     $nama_clean = preg_replace('/\s+/', '', $nama_client);
     $custom_direct_link = rtrim($base_url, '/') . '/' . $tahun_event . '/' . $nama_clean;
 
@@ -71,7 +71,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     exit;
 }
 
-$init_year = date('Y', strtotime($client['tanggal_event']));
+$init_year = (!empty($client['tanggal_event']) && $client['tanggal_event'] !== '0000-00-00')
+    ? date('Y', strtotime($client['tanggal_event']))
+    : date('Y');
 $init_clean_name = preg_replace('/\s+/', '', $client['nama_client']);
 $init_direct_link = rtrim($base_url, '/') . '/' . $init_year . '/' . $init_clean_name;
 ?>
@@ -110,18 +112,21 @@ $init_direct_link = rtrim($base_url, '/') . '/' . $init_year . '/' . $init_clean
             </div>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                    <label class="block text-sm font-medium text-gray-700">Tanggal Event</label>
-                    <input type="date" name="tanggal_event" id="input_tanggal" value="<?= $client['tanggal_event'] ?>" required class="mt-1 w-full px-3 py-2 border rounded-md focus:border-blue-500 focus:outline-none" onchange="updatePreviewLink()">
+                    <label class="block text-sm font-medium text-gray-700">Tanggal Event <span class="text-xs text-gray-400 font-normal">(Opsional)</span></label>
+                    <input type="date" name="tanggal_event" id="input_tanggal" value="<?= htmlspecialchars($client['tanggal_event'] ?? '') ?>" class="mt-1 w-full px-3 py-2 border rounded-md focus:border-blue-500 focus:outline-none" onchange="updatePreviewLink()">
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-700">Jam Mulai</label>
-                    <input type="time" name="jam_mulai" value="<?= $client['jam_mulai'] ?>" required class="mt-1 w-full px-3 py-2 border rounded-md focus:border-blue-500 focus:outline-none">
+                    <label class="block text-sm font-medium text-gray-700">Jam Mulai <span class="text-xs text-gray-400 font-normal">(Opsional)</span></label>
+                    <input type="time" name="jam_mulai" value="<?= htmlspecialchars($client['jam_mulai'] ?? '') ?>" class="mt-1 w-full px-3 py-2 border rounded-md focus:border-blue-500 focus:outline-none">
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-700">Jam Selesai</label>
-                    <input type="time" name="jam_selesai" value="<?= $client['jam_selesai'] ?>" required class="mt-1 w-full px-3 py-2 border rounded-md focus:border-blue-500 focus:outline-none">
+                    <label class="block text-sm font-medium text-gray-700">Jam Selesai <span class="text-xs text-gray-400 font-normal">(Opsional)</span></label>
+                    <input type="time" name="jam_selesai" value="<?= htmlspecialchars($client['jam_selesai'] ?? '') ?>" class="mt-1 w-full px-3 py-2 border rounded-md focus:border-blue-500 focus:outline-none">
                 </div>
             </div>
+            <p class="text-xs text-amber-600 font-medium mt-1">
+                💡 <em>Catatan:</em> Project baru belum akan ditampilkan di halaman Live Events (files.yuhu.co.id) sampai Tanggal dan Jam Acara di atas diisi.
+            </p>
             <div class="flex flex-wrap items-center justify-between gap-3 pt-6">
                 <a href="gallery.php?id=<?= $client['id'] ?>" class="bg-emerald-50 text-emerald-700 border border-emerald-200 px-4 py-2 rounded-md hover:bg-emerald-100 font-semibold text-sm">
                     🖼️ Kelola Foto Galeri Acara Ini

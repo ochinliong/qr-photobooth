@@ -567,7 +567,7 @@ $sessions = array_values($sessions_map);
                             <a href="gallery.php?id=<?= $ev['id'] ?>" class="block p-3 rounded-xl transition <?= $is_active ? 'bg-blue-600 text-white shadow-sm' : 'hover:bg-slate-50 text-slate-800' ?>">
                                 <div class="font-bold text-sm truncate"><?= htmlspecialchars($ev['nama_client']) ?></div>
                                 <div class="flex items-center justify-between mt-1.5 text-xs <?= $is_active ? 'text-blue-100' : 'text-slate-500' ?>">
-                                    <span><?= htmlspecialchars($ev['tanggal_event']) ?></span>
+                                    <span><?= !empty($ev['tanggal_event']) ? htmlspecialchars($ev['tanggal_event']) : 'Belum Dijadwalkan' ?></span>
                                     <span class="font-bold px-2 py-0.5 rounded-full text-[11px] <?= $is_active ? 'bg-blue-700 text-white' : ($ev['media_count'] > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500') ?>">
                                         📷 <?= $ev['media_count'] ?> File
                                     </span>
@@ -611,7 +611,7 @@ $sessions = array_values($sessions_map);
                                     </span>
                                 </div>
                                 <p class="text-xs text-slate-500 mt-1">
-                                    📅 <?= htmlspecialchars($selected_event['tanggal_event']) ?> (<?= substr($selected_event['jam_mulai'], 0, 5) ?> - <?= substr($selected_event['jam_selesai'], 0, 5) ?>)
+                                    📅 <?= !empty($selected_event['tanggal_event']) ? (htmlspecialchars($selected_event['tanggal_event']) . ' (' . substr($selected_event['jam_mulai'] ?? '', 0, 5) . ' - ' . substr($selected_event['jam_selesai'] ?? '', 0, 5) . ')') : 'Jadwal belum ditentukan' ?>
                                     • 📍 <?= htmlspecialchars($selected_event['lokasi'] === '-' ? 'Lokasi belum diisi' : $selected_event['lokasi']) ?>
                                 </p>
                             </div>

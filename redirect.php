@@ -85,8 +85,8 @@ function routeToClientDestination($c, $base_url, $is_vip_mode = false) {
 }
 
 if (!empty($year) && !empty($search_slug)) {
-    // 1. Cari di database yang tahunnya cocok
-    $stmt = $pdo->prepare("SELECT * FROM clients WHERE YEAR(tanggal_event) = ? ORDER BY id DESC");
+    // 1. Cari di database yang tahunnya cocok atau tanggal_event masih kosong (project baru LumaBooth)
+    $stmt = $pdo->prepare("SELECT * FROM clients WHERE (YEAR(tanggal_event) = ? OR tanggal_event IS NULL OR tanggal_event = '0000-00-00') ORDER BY id DESC");
     $stmt->execute([$year]);
     $clients = $stmt->fetchAll(PDO::FETCH_ASSOC);
 

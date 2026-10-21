@@ -107,7 +107,9 @@ $clients = $pdo->query("SELECT * FROM clients ORDER BY created_at DESC")->fetchA
 
 // Helper untuk membuat Direct Link otomatis dari data klien
 function buildDirectLink($c, $base_url) {
-    $year = date('Y', strtotime($c['tanggal_event']));
+    $year = (!empty($c['tanggal_event']) && $c['tanggal_event'] !== '0000-00-00')
+        ? date('Y', strtotime($c['tanggal_event']))
+        : date('Y');
     $clean_name = preg_replace('/\s+/', '', $c['nama_client']);
     return rtrim($base_url, '/') . '/' . $year . '/' . $clean_name;
 }
@@ -281,10 +283,11 @@ function countLocalPhotos($c) {
                                 $internal_gallery_url = rtrim($base_url, '/') . '/client/' . rawurlencode($folder_c);
                                 $is_auto_lokasi = (trim($c['lokasi'] ?? '') === '' || trim($c['lokasi'] ?? '') === '-');
 
-                                $tgl_obj = strtotime($c['tanggal_event']);
+                                $tgl_obj = (!empty($c['tanggal_event']) && $c['tanggal_event'] !== '0000-00-00') ? strtotime($c['tanggal_event']) : null;
                                 $bulan_indo = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
-                                $tgl_formatted = $tgl_obj ? (date('d', $tgl_obj) . ' ' . $bulan_indo[(int)date('m', $tgl_obj) - 1] . ' ' . date('Y', $tgl_obj)) : $c['tanggal_event'];
-                                $jam_formatted = substr($c['jam_mulai'], 0, 5) . ' - ' . substr($c['jam_selesai'], 0, 5) . ' WIB';
+                                $tgl_formatted = $tgl_obj ? (date('d', $tgl_obj) . ' ' . $bulan_indo[(int)date('m', $tgl_obj) - 1] . ' ' . date('Y', $tgl_obj)) : null;
+                                $has_real_time = (!empty($c['jam_mulai']) && !empty($c['jam_selesai']) && !($c['jam_mulai'] === '00:00:00' && $c['jam_selesai'] === '23:59:00' && empty($tgl_formatted)));
+                                $jam_formatted = $has_real_time ? (substr($c['jam_mulai'], 0, 5) . ' - ' . substr($c['jam_selesai'], 0, 5) . ' WIB') : null;
                             ?>
                             <tr class="hover:bg-slate-50/70 transition">
                                 <!-- Kolom 1: Klien & Acara -->
@@ -294,10 +297,19 @@ function countLocalPhotos($c) {
                                     </div>
 
                                     <div class="space-y-1 mb-2.5">
-                                        <div class="text-xs text-slate-600 flex items-center gap-1.5 font-medium">
-                                            <span>📅 <?= $tgl_formatted ?></span>
-                                            <span class="text-slate-300">•</span>
-                                            <span>🕒 <?= $jam_formatted ?></span>
+                                        <div class="text-xs text-slate-600 flex items-center gap-1.5 font-medium flex-wrap">
+                                            <?php if ($tgl_formatted && $jam_formatted): ?>
+                                                <span>📅 <?= $tgl_formatted ?></span>
+                                                <span class="text-slate-300">•</span>
+                                                <span>🕒 <?= $jam_formatted ?></span>
+                                            <?php else: ?>
+                                                <a href="edit.php?id=<?= $c['id'] ?>" class="inline-flex items-center gap-1 text-amber-600 hover:text-amber-700 font-semibold hover:underline">
+                                                    📅 + Atur Tanggal & Jam Acara
+                                                </a>
+                                                <span class="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200" title="Project ini belum tampil di Live Events sampai tanggal & jam acara ditentukan">
+                                                    🔒 Belum Tampil di Live
+                                                </span>
+                                            <?php endif; ?>
                                         </div>
                                         <div class="text-xs">
                                             <?php if ($is_auto_lokasi): ?>

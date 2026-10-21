@@ -67,6 +67,16 @@ if (!function_exists('deduplicateLumaboothClients')) {
     }
 }
 
+// Migrasi satu kali: pastikan tanggal_event dan jam_mulai/selesai mengizinkan NULL
+// sehingga project baru otomatis dari LumaBooth belum memiliki jadwal default (tidak terlihat di Live Events tamu)
+if (!file_exists(__DIR__ . '/.db_schema_v2_migrated')) {
+    try {
+        $pdo->exec("ALTER TABLE clients MODIFY tanggal_event DATE NULL DEFAULT NULL, MODIFY jam_mulai TIME NULL DEFAULT NULL, MODIFY jam_selesai TIME NULL DEFAULT NULL");
+        $pdo->exec("UPDATE clients SET tanggal_event = NULL, jam_mulai = NULL, jam_selesai = NULL WHERE (lokasi = '-' OR lokasi = '' OR slug LIKE 'lb-%') AND jam_mulai = '00:00:00' AND jam_selesai = '23:59:00'");
+        @file_put_contents(__DIR__ . '/.db_schema_v2_migrated', date('Y-m-d H:i:s'));
+    } catch (Exception $e) {}
+}
+
 if (!function_exists('ensureLumaboothEventInDb')) {
     function ensureLumaboothEventInDb($pdo, $base_url, $folder_name, $is_active_upload = false, $preloaded_clients = null) {
         $folder_name = trim(str_replace(['..', '/', '\\', "\0"], '', (string)$folder_name));
@@ -96,7 +106,7 @@ if (!function_exists('ensureLumaboothEventInDb')) {
         // Jika saat upload foto ke-2 dst folder ini sudah tercatat di DB (.db_registered.lock ada),
         // langsung lewati query DB & lewati lock agar 4+ komputer bisa upload paralel tanpa hambatan!
         if ($is_active_upload && file_exists($registered_marker) && !file_exists($deleted_marker) && (!isset($_REQUEST['action']) || $_REQUEST['action'] !== 'register_event')) {
-            return ['nama_client' => str_replace('_', ' ', $folder_name), 'tanggal_event' => date('Y-m-d')];
+            return ['nama_client' => str_replace('_', ' ', $folder_name), 'tanggal_event' => null];
         }
 
         $req_clean = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $folder_name));
@@ -112,7 +122,7 @@ if (!function_exists('ensureLumaboothEventInDb')) {
             // Cek ulang di dalam lock apakah request dari komputer lain baru saja mendaftarkannya
             if ($is_active_upload && file_exists($registered_marker) && !file_exists($deleted_marker) && (!isset($_REQUEST['action']) || $_REQUEST['action'] !== 'register_event')) {
                 if ($lock_fp) { @flock($lock_fp, LOCK_UN); @fclose($lock_fp); }
-                return ['nama_client' => str_replace('_', ' ', $folder_name), 'tanggal_event' => date('Y-m-d')];
+                return ['nama_client' => str_replace('_', ' ', $folder_name), 'tanggal_event' => null];
             }
 
             if (is_array($preloaded_clients)) {
@@ -158,9 +168,11 @@ if (!function_exists('ensureLumaboothEventInDb')) {
             if ($slug_base === '') $slug_base = 'event';
             $slug = 'lb-' . $slug_base;
 
-            $tanggal_event = date('Y-m-d');
-            $jam_mulai = '00:00:00';
-            $jam_selesai = '23:59:00';
+            // Project baru dari LumaBooth belum memiliki tanggal & jam acara secara default
+            // agar TIDAK terlihat oleh tamu umum di halaman Live Events (files.yuhu.co.id)
+            $tanggal_event = null;
+            $jam_mulai = null;
+            $jam_selesai = null;
             $lokasi_default = '-';
 
             $qr_folder_path = __DIR__ . '/uploads/qrcodes';
@@ -191,7 +203,7 @@ if (!function_exists('ensureLumaboothEventInDb')) {
 
             // Download QR Code hanya jika file QR belum ada
             if (!file_exists($qr_filepath) && function_exists('curl_init')) {
-                $tahun_event = date('Y', strtotime($tanggal_event));
+                $tahun_event = !empty($tanggal_event) ? date('Y', strtotime($tanggal_event)) : date('Y');
                 $nama_clean = preg_replace('/\s+/', '', $readable_name);
                 $custom_direct_link = rtrim($base_url, '/') . '/' . $tahun_event . '/' . $nama_clean;
                 $qr_api = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' . urlencode($custom_direct_link);
@@ -258,7 +270,8 @@ if (!function_exists('autoSyncAllLumaboothFolders')) {
         foreach ($unregistered_dirs as $d) {
             $res = ensureLumaboothEventInDb($pdo, $base_url, $d, false, $preloaded);
             if ($res) {
-                $synced_list[] = $res['nama_client'] . ' -> ' . rtrim($base_url, '/') . '/' . date('Y', strtotime($res['tanggal_event'])) . '/' . preg_replace('/\s+/', '', $res['nama_client']);
+                $yr_res = (!empty($res['tanggal_event'])) ? date('Y', strtotime($res['tanggal_event'])) : date('Y');
+                $synced_list[] = $res['nama_client'] . ' -> ' . rtrim($base_url, '/') . '/' . $yr_res . '/' . preg_replace('/\s+/', '', $res['nama_client']);
                 $preloaded = null; // refresh jika ada insert baru
             }
         }

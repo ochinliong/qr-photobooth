@@ -80,7 +80,7 @@ if ($action === 'register_event') {
         exit;
     }
     $synced = ensureLumaboothEventInDb($pdo, $base_url, $client_event, true);
-    $year_ev = $synced ? date('Y', strtotime($synced['tanggal_event'])) : date('Y');
+    $year_ev = ($synced && !empty($synced['tanggal_event'])) ? date('Y', strtotime($synced['tanggal_event'])) : date('Y');
     $clean_ev = $synced ? preg_replace('/\s+/', '', $synced['nama_client']) : preg_replace('/\s+/', '', $client_event);
     echo json_encode([
         'status' => 'success',
@@ -114,7 +114,7 @@ if ($action === 'list_events') {
     $result = [];
 
     foreach ($clients as $c) {
-        $year = date('Y', strtotime($c['tanggal_event']));
+        $year = (!empty($c['tanggal_event']) && $c['tanggal_event'] !== '0000-00-00') ? date('Y', strtotime($c['tanggal_event'])) : date('Y');
         $clean_name = preg_replace('/\s+/', '', $c['nama_client']);
         $direct_link = rtrim($base_url, '/') . '/' . $year . '/' . $clean_name;
 
@@ -132,12 +132,17 @@ if ($action === 'list_events') {
             }
         }
 
-        // Cek apakah sedang live
-        $start = new DateTime($c['tanggal_event'] . ' ' . $c['jam_mulai'], new DateTimeZone('Asia/Jakarta'));
-        $end   = new DateTime($c['tanggal_event'] . ' ' . $c['jam_selesai'], new DateTimeZone('Asia/Jakarta'));
-        $vis_start = (clone $start)->modify('-1 hour');
-        $vis_end   = (clone $end)->modify('+1 hour');
-        $is_live   = ($now >= $vis_start && $now <= $vis_end);
+        // Cek apakah sedang live (hanya jika tanggal & jam sudah ditentukan)
+        $is_live = false;
+        if (!empty($c['tanggal_event']) && !empty($c['jam_mulai']) && !empty($c['jam_selesai']) && $c['tanggal_event'] !== '0000-00-00') {
+            try {
+                $start = new DateTime($c['tanggal_event'] . ' ' . $c['jam_mulai'], new DateTimeZone('Asia/Jakarta'));
+                $end   = new DateTime($c['tanggal_event'] . ' ' . $c['jam_selesai'], new DateTimeZone('Asia/Jakarta'));
+                $vis_start = (clone $start)->modify('-1 hour');
+                $vis_end   = (clone $end)->modify('+1 hour');
+                $is_live   = ($now >= $vis_start && $now <= $vis_end);
+            } catch (Exception $e) {}
+        }
 
         $result[] = [
             'id' => (int)$c['id'],
