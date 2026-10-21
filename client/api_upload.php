@@ -3,6 +3,11 @@ header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json; charset=UTF-8");
 
 require_once '../config.php';
+// Lepaskan pengunci sesi PHP seketika agar 4+ komputer yang upload bersamaan tidak saling antre!
+if (session_status() === PHP_SESSION_ACTIVE) {
+    @session_write_close();
+}
+define('LUMABOOTH_SKIP_AUTOSYNC', true);
 require_once __DIR__ . '/../lumabooth_sync.php';
 
 // 1. Password/Token Keamanan (Mendukung token YUHU v5 & token Portal)
@@ -156,24 +161,46 @@ if (!is_dir($upload_dir)) {
     @mkdir($upload_dir, 0777, true);
 }
 
-// 6. Simpan File dengan Atomic Write (.part -> rename) agar tidak pernah tampil setengah korup
+// 6. Simpan File dengan Atomic Write (.part -> rename) & Multi-PC Collision Protection
 $filename = preg_replace('/[^a-zA-Z0-9_.\-& ]/', '', $original_name);
 $target_path = $upload_dir . $filename;
 
-// Jika file sudah ada dan ukurannya sama persis, lewati (idempotent)
-if (file_exists($target_path) && @filesize($target_path) === $actual_size && $actual_size > 0) {
-    http_response_code(200);
-    echo json_encode([
-        "status" => "success",
-        "message" => "File $filename sudah ada secara utuh di folder $target_folder",
-        "file" => $filename,
-        "folder" => $target_folder,
-        "event" => $matched_folder
-    ]);
-    exit;
+// Jika file sudah ada:
+if (file_exists($target_path) && $actual_size > 0) {
+    $existing_size = @filesize($target_path);
+    if ($existing_size === $actual_size) {
+        // Ukurannya sama persis -> File yang sama dari retry (idempotent), langsung sukses!
+        http_response_code(200);
+        echo json_encode([
+            "status" => "success",
+            "message" => "File $filename sudah ada secara utuh di folder $target_folder",
+            "file" => $filename,
+            "folder" => $target_folder,
+            "event" => $matched_folder
+        ]);
+        exit;
+    } else {
+        // Ukurannya berbeda -> Berasal dari Komputer Photobooth lain dengan nama file kamera yang kebetulan sama!
+        // Tambahkan kode unik 4-karakter dari isi file agar foto dari Komputer 1 & Komputer 2 sama-sama tersimpan aman.
+        $file_hash = substr(@md5_file($tmp_name) ?: uniqid(), 0, 4);
+        $base_no_ext = pathinfo($filename, PATHINFO_FILENAME);
+        $filename = $base_no_ext . '_' . $file_hash . '.' . $ext;
+        $target_path = $upload_dir . $filename;
+        if (file_exists($target_path) && @filesize($target_path) === $actual_size) {
+            http_response_code(200);
+            echo json_encode([
+                "status" => "success",
+                "message" => "File $filename sudah ada secara utuh di folder $target_folder",
+                "file" => $filename,
+                "folder" => $target_folder,
+                "event" => $matched_folder
+            ]);
+            exit;
+        }
+    }
 }
 
-$temp_path = $target_path . '.part_' . uniqid();
+$temp_path = $target_path . '.part_' . uniqid('', true) . '_' . mt_rand(1000, 9999);
 if (move_uploaded_file($tmp_name, $temp_path)) {
     if (!@rename($temp_path, $target_path)) {
         @copy($temp_path, $target_path);

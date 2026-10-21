@@ -1,5 +1,9 @@
 <?php
 require_once '../config.php';
+if (session_status() === PHP_SESSION_ACTIVE) {
+    @session_write_close();
+}
+define('LUMABOOTH_SKIP_AUTOSYNC', true);
 require_once __DIR__ . '/../lumabooth_sync.php';
 
 // Dukung parameter ?client= (standar LumaBooth Cloud) maupun ?c= (standar Portal)

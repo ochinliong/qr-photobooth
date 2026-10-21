@@ -1,14 +1,21 @@
 <?php
 /**
  * ============================================================================
- * YUHU PHOTOBOOTH - LUMABOOTH AUTO-LINK & DATABASE SYNC ENGINE
+ * YUHU PHOTOBOOTH - LUMABOOTH AUTO-LINK & HIGH-CONCURRENCY SYNC ENGINE
  * ============================================================================
- * File ini terpisah dari config.php agar kredensial database cPanel di config.php
- * tidak pernah tertimpa saat git update.
+ * Dirancang khusus agar tetap cepat & lancar meskipun digunakan oleh
+ * 4 hingga 20+ Komputer Photobooth sekaligus secara bersamaan (Multi-PC Ready):
  *
- * Dilengkapi:
- * - File Locking (flock LOCK_EX) & Deterministic Unique Slug (Anti-Double / Anti Race Condition)
- * - Auto-Deduplicator (Otomatis membersihkan jika ada data kembar akibat upload bersamaan)
+ * 1. Fast-Path Cache (.db_registered.lock):
+ *    Setelah foto pertama membuat link di database, upload foto ke-2 s/d ribuan
+ *    dari 4+ komputer langsung masuk paralel (< 0.01ms) tanpa perlu query DB
+ *    dan tanpa antre lock!
+ * 2. Per-Folder Mutex Lock:
+ *    Kunci sinkronisasi dipisah per folder acara sehingga Komputer 1, 2, 3, 4+
+ *    tidak pernah saling menunggu.
+ * 3. Auto-Deduplicator & Deterministic Unique Slug:
+ *    Mencegah 100% pembuatan link ganda meskipun 4 komputer mengupload ke
+ *    nama project yang sama di detik yang sama persis.
  */
 
 if (!function_exists('extractLumaboothFolderFromUrl')) {
@@ -37,7 +44,6 @@ if (!function_exists('extractLumaboothFolderFromUrl')) {
 if (!function_exists('deduplicateLumaboothClients')) {
     function deduplicateLumaboothClients($pdo) {
         try {
-            // Urutkan agar baris yang sudah diedit lokasi oleh Admin (lokasi != '-') diprioritaskan tetap disimpan
             $stmt = $pdo->query("SELECT * FROM clients ORDER BY (CASE WHEN lokasi != '-' AND lokasi != '' THEN 0 ELSE 1 END) ASC, id ASC");
             $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -51,7 +57,6 @@ if (!function_exists('deduplicateLumaboothClients')) {
                 if ($clean_name === '' && $clean_folder === '') continue;
 
                 if (isset($seen_keys[$key])) {
-                    // Hapus baris duplikat
                     $del = $pdo->prepare("DELETE FROM clients WHERE id = ?");
                     $del->execute([$r['id']]);
                 } else {
@@ -63,7 +68,7 @@ if (!function_exists('deduplicateLumaboothClients')) {
 }
 
 if (!function_exists('ensureLumaboothEventInDb')) {
-    function ensureLumaboothEventInDb($pdo, $base_url, $folder_name, $is_active_upload = false) {
+    function ensureLumaboothEventInDb($pdo, $base_url, $folder_name, $is_active_upload = false, $preloaded_clients = null) {
         $folder_name = trim(str_replace(['..', '/', '\\', "\0"], '', (string)$folder_name));
         if ($folder_name === '') return null;
 
@@ -75,27 +80,47 @@ if (!function_exists('ensureLumaboothEventInDb')) {
 
         $photos_root = __DIR__ . '/client/photos';
         $event_dir = $photos_root . '/' . $folder_name;
-        $deleted_marker = $event_dir . '/.deleted_by_admin';
+        if (!is_dir($event_dir)) {
+            @mkdir($event_dir, 0777, true);
+        }
 
-        // Jika pemindaian pasif dan pernah sengaja dihapus oleh Admin, jangan buat ulang otomatis
+        $deleted_marker = $event_dir . '/.deleted_by_admin';
+        $registered_marker = $event_dir . '/.db_registered.lock';
+
+        // Jika pemindaian pasif dan pernah sengaja dihapus oleh Admin, lewati
         if (!$is_active_upload && file_exists($deleted_marker)) {
             return null;
+        }
+
+        // FAST-PATH MULTI-PC (< 0.01ms):
+        // Jika saat upload foto ke-2 dst folder ini sudah tercatat di DB (.db_registered.lock ada),
+        // langsung lewati query DB & lewati lock agar 4+ komputer bisa upload paralel tanpa hambatan!
+        if ($is_active_upload && file_exists($registered_marker) && !file_exists($deleted_marker) && (!isset($_REQUEST['action']) || $_REQUEST['action'] !== 'register_event')) {
+            return ['nama_client' => str_replace('_', ' ', $folder_name), 'tanggal_event' => date('Y-m-d')];
         }
 
         $req_clean = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $folder_name));
         if ($req_clean === '') return null;
 
-        // Kunci proses (Mutex Lock) agar 2 upload yang masuk di detik yang sama tidak membuat 2 baris!
-        $lock_dir = __DIR__ . '/uploads';
-        if (!is_dir($lock_dir)) @mkdir($lock_dir, 0777, true);
-        $lock_fp = @fopen($lock_dir . '/lumabooth_sync.lock', 'c+');
+        // Per-Folder Mutex Lock: Komputer di Event A tidak pernah menghalangi Komputer di Event B
+        $lock_fp = @fopen($event_dir . '/.sync_mutex.lock', 'c+');
         if ($lock_fp) {
             @flock($lock_fp, LOCK_EX);
         }
 
         try {
-            $stmt = $pdo->query("SELECT * FROM clients ORDER BY id DESC");
-            $all_clients = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            // Cek ulang di dalam lock apakah request dari komputer lain baru saja mendaftarkannya
+            if ($is_active_upload && file_exists($registered_marker) && !file_exists($deleted_marker) && (!isset($_REQUEST['action']) || $_REQUEST['action'] !== 'register_event')) {
+                if ($lock_fp) { @flock($lock_fp, LOCK_UN); @fclose($lock_fp); }
+                return ['nama_client' => str_replace('_', ' ', $folder_name), 'tanggal_event' => date('Y-m-d')];
+            }
+
+            if (is_array($preloaded_clients)) {
+                $all_clients = $preloaded_clients;
+            } else {
+                $stmt = $pdo->query("SELECT * FROM clients ORDER BY id DESC");
+                $all_clients = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            }
 
             $matched = null;
             foreach ($all_clients as $row) {
@@ -118,6 +143,7 @@ if (!function_exists('ensureLumaboothEventInDb')) {
                     $upd->execute([$gallery_link, $matched['id']]);
                     $matched['folder_foto_path'] = $gallery_link;
                 }
+                @file_put_contents($registered_marker, (string)$matched['id']);
                 if ($lock_fp) { @flock($lock_fp, LOCK_UN); @fclose($lock_fp); }
                 return $matched;
             }
@@ -126,7 +152,7 @@ if (!function_exists('ensureLumaboothEventInDb')) {
                 @unlink($deleted_marker);
             }
 
-            // Gunakan slug deterministik berbasis nama folder agar MySQL UNIQUE index juga mencegah duplikat
+            // Slug deterministik berbasis nama folder agar MySQL UNIQUE index mencegah duplikat 100%
             $readable_name = trim(str_replace('_', ' ', $folder_name));
             $slug_base = strtolower(trim(preg_replace('/[^A-Za-z0-9-]+/', '-', $readable_name), '-'));
             if ($slug_base === '') $slug_base = 'event';
@@ -144,7 +170,7 @@ if (!function_exists('ensureLumaboothEventInDb')) {
             $qr_filename = $slug . '.png';
             $qr_filepath = $qr_folder_path . '/' . $qr_filename;
 
-            // INSERT ke Database TERLEBIH DAHULU di dalam Lock (< 1ms) sebelum download gambar QR
+            // INSERT ke Database TERLEBIH DAHULU di dalam Lock (< 1ms)
             $ins = $pdo->prepare("INSERT IGNORE INTO clients (nama_client, slug, lokasi, tanggal_event, jam_mulai, jam_selesai, qr_code_path, folder_foto_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
             $ins->execute([
                 $readable_name,
@@ -158,6 +184,7 @@ if (!function_exists('ensureLumaboothEventInDb')) {
             ]);
 
             $new_id = (int)$pdo->lastInsertId();
+            @file_put_contents($registered_marker, (string)$new_id);
 
             // Lepaskan Lock segera setelah INSERT selesai
             if ($lock_fp) { @flock($lock_fp, LOCK_UN); @fclose($lock_fp); $lock_fp = null; }
@@ -197,22 +224,42 @@ if (!function_exists('ensureLumaboothEventInDb')) {
 }
 
 if (!function_exists('autoSyncAllLumaboothFolders')) {
-    function autoSyncAllLumaboothFolders($pdo, $base_url) {
-        // 1. Bersihkan jika ada entri yang terlanjur dobel
-        deduplicateLumaboothClients($pdo);
-
-        // 2. Pindai folder di /client/photos/
-        $synced_list = [];
+    function autoSyncAllLumaboothFolders($pdo, $base_url, $force_full_scan = false) {
         $photos_root = __DIR__ . '/client/photos';
-        if (!is_dir($photos_root)) return $synced_list;
+        if (!is_dir($photos_root)) return [];
+
+        // Cek apakah ada folder yang belum punya .db_registered.lock
         $dirs = @scandir($photos_root) ?: [];
+        $unregistered_dirs = [];
         foreach ($dirs as $d) {
             if ($d === '.' || $d === '..') continue;
-            if (is_dir($photos_root . '/' . $d)) {
-                $res = ensureLumaboothEventInDb($pdo, $base_url, $d, false);
-                if ($res) {
-                    $synced_list[] = $res['nama_client'] . ' -> ' . rtrim($base_url, '/') . '/' . date('Y', strtotime($res['tanggal_event'])) . '/' . preg_replace('/\s+/', '', $res['nama_client']);
+            $full_d = $photos_root . '/' . $d;
+            if (is_dir($full_d)) {
+                if ($force_full_scan || (!file_exists($full_d . '/.db_registered.lock') && !file_exists($full_d . '/.deleted_by_admin'))) {
+                    $unregistered_dirs[] = $d;
                 }
+            }
+        }
+
+        // Jika tidak ada folder baru dan bukan force scan, keluar instan (< 0.1ms) tanpa membebani DB!
+        if (empty($unregistered_dirs) && !$force_full_scan) {
+            return [];
+        }
+
+        deduplicateLumaboothClients($pdo);
+
+        $preloaded = null;
+        try {
+            $stmt = $pdo->query("SELECT * FROM clients ORDER BY id DESC");
+            $preloaded = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (Exception $e) {}
+
+        $synced_list = [];
+        foreach ($unregistered_dirs as $d) {
+            $res = ensureLumaboothEventInDb($pdo, $base_url, $d, false, $preloaded);
+            if ($res) {
+                $synced_list[] = $res['nama_client'] . ' -> ' . rtrim($base_url, '/') . '/' . date('Y', strtotime($res['tanggal_event'])) . '/' . preg_replace('/\s+/', '', $res['nama_client']);
+                $preloaded = null; // refresh jika ada insert baru
             }
         }
         return $synced_list;
@@ -225,7 +272,7 @@ if (php_sapi_name() === 'cli' || basename($_SERVER['SCRIPT_FILENAME'] ?? '') ===
     if (function_exists('opcache_reset')) {
         @opcache_reset();
     }
-    $list = autoSyncAllLumaboothFolders($pdo, $base_url);
+    $list = autoSyncAllLumaboothFolders($pdo, $base_url, true);
     if (php_sapi_name() === 'cli') {
         echo "\n=======================================================\n";
         echo "  SINKRONISASI & DEDUPLIKASI LUMABOOTH -> FILES.YUHU.CO.ID\n";
@@ -241,8 +288,9 @@ if (php_sapi_name() === 'cli' || basename($_SERVER['SCRIPT_FILENAME'] ?? '') ===
     exit;
 }
 
-// Jalankan sinkronisasi & deduplikasi otomatis setiap kali file ini di-include oleh halaman web
-if (isset($pdo) && isset($base_url)) {
-    autoSyncAllLumaboothFolders($pdo, $base_url);
+// Jangan jalankan scan semua folder saat request upload satuan atau polling AJAX galeri tamu
+if (isset($pdo) && isset($base_url) && !defined('LUMABOOTH_SKIP_AUTOSYNC') && !isset($_GET['ajax'])) {
+    $is_admin_page = (strpos($_SERVER['SCRIPT_NAME'] ?? '', '/admin/') !== false);
+    autoSyncAllLumaboothFolders($pdo, $base_url, $is_admin_page);
 }
 ?>

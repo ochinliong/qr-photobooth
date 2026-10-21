@@ -90,6 +90,7 @@ if (isset($_GET['delete'])) {
             foreach (scandir($photos_root) as $d) {
                 if ($d !== '.' && $d !== '..' && is_dir($photos_root . '/' . $d)) {
                     if ($cand_clean !== '' && strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $d)) === $cand_clean) {
+                        @unlink($photos_root . '/' . $d . '/.db_registered.lock');
                         @file_put_contents($photos_root . '/' . $d . '/.deleted_by_admin', date('Y-m-d H:i:s'));
                     }
                 }
