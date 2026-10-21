@@ -10,6 +10,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 require_once '../config.php';
+require_once __DIR__ . '/../lumabooth_sync.php';
 
 // Token keamanan default untuk LumaBooth Sync Agent / Operator
 $VALID_API_KEYS = ['yuhu8080', 'YuhuSecretToken2026', '8080'];

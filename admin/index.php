@@ -1,5 +1,6 @@
 <?php
 require_once '../config.php';
+require_once __DIR__ . '/../lumabooth_sync.php';
 if (!isset($_SESSION['admin_id'])) {
     header("Location: login.php");
     exit;

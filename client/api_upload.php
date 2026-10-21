@@ -3,6 +3,7 @@ header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json; charset=UTF-8");
 
 require_once '../config.php';
+require_once __DIR__ . '/../lumabooth_sync.php';
 
 // 1. Password/Token Keamanan (Mendukung token YUHU v5 & token Portal)
 $VALID_TOKENS = ["YuhuSecretToken2026", "yuhu8080", "8080"];

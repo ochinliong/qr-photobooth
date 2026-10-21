@@ -1,5 +1,6 @@
 <?php
 require_once '../config.php';
+require_once __DIR__ . '/../lumabooth_sync.php';
 
 // Dukung parameter ?client= (standar LumaBooth Cloud) maupun ?c= (standar Portal)
 $raw_param = $_GET['client'] ?? ($_GET['c'] ?? '');

@@ -1,5 +1,6 @@
 <?php
 require_once 'config.php';
+require_once __DIR__ . '/lumabooth_sync.php';
 
 // Ambil semua klien (termasuk yang baru otomatis disinkronkan dari LumaBooth)
 $stmt = $pdo->query("SELECT * FROM clients ORDER BY id DESC");

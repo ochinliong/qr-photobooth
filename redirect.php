@@ -1,5 +1,6 @@
 <?php
 require_once 'config.php';
+require_once __DIR__ . '/lumabooth_sync.php';
 
 // Ambil URI asli untuk menghindari masalah pemotongan karakter '&' pada query string
 $request_uri = $_SERVER['REQUEST_URI'] ?? '';

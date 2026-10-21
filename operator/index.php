@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once '../config.php';
+require_once __DIR__ . '/../lumabooth_sync.php';
 
 // Konfigurasi Keamanan PIN (PIN: 8080)
 // Di-hash menggunakan SHA-256 agar tidak bisa dibaca langsung (anti-hack)
