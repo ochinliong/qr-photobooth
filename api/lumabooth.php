@@ -9,13 +9,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
+if (session_status() === PHP_SESSION_NONE) {
+    @session_start();
+}
+
 require_once '../config.php';
 require_once __DIR__ . '/../lumabooth_sync.php';
 
-// Token keamanan default untuk LumaBooth Sync Agent / Operator
+// Token keamanan resmi untuk LumaBooth Sync Agent / Operator
 $VALID_API_KEYS = ['yuhu8080', 'YuhuSecretToken2026', '8080'];
 
-// Helper untuk mengambil API Key dari Header, POST, atau GET
+// Helper untuk mengambil API Key dari Header resmi atau POST (TIDAK membaca dari GET/URL publik!)
 function getRequestApiKey() {
     $headers = function_exists('getallheaders') ? getallheaders() : [];
     foreach ($headers as $k => $v) {
@@ -25,18 +29,33 @@ function getRequestApiKey() {
     if (isset($_SERVER['HTTP_X_API_KEY'])) return trim($_SERVER['HTTP_X_API_KEY']);
     if (isset($_POST['api_key'])) return trim($_POST['api_key']);
     if (isset($_POST['token'])) return trim($_POST['token']);
-    if (isset($_GET['api_key'])) return trim($_GET['api_key']);
-    if (isset($_GET['token'])) return trim($_GET['token']);
     return '';
 }
 
+$is_admin_session = isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in'] === true;
 $req_key = getRequestApiKey();
-if (!in_array($req_key, $VALID_API_KEYS, true)) {
+$is_valid_key = in_array($req_key, $VALID_API_KEYS, true);
+
+// Blokir total jika tidak memiliki API Key di Header/POST dan bukan Admin yang sedang login
+if (!$is_valid_key && !$is_admin_session) {
     http_response_code(403);
+    echo json_encode([
+        'status' => 'error',
+        'message' => '403 Forbidden: Akses publik ditutup. API Key tidak boleh ditaruh di URL (GET). Gunakan HTTP Header resmi atau login Admin.'
+    ]);
     exit;
 }
 
-$action = $_GET['action'] ?? ($_POST['action'] ?? 'list_events');
+// Default action KOSONG (mencegah auto dump list_events jika dibuka di browser)
+$action = $_POST['action'] ?? ($_GET['action'] ?? '');
+if ($action === '') {
+    http_response_code(400);
+    echo json_encode([
+        'status' => 'error',
+        'message' => 'Aksi tidak ditentukan. Akses publik dinonaktifkan.'
+    ]);
+    exit;
+}
 
 // =========================================================================
 // 0. ACTION: ping (Health check cepat untuk deteksi internet/server pulih)
@@ -77,6 +96,17 @@ if ($action === 'register_event') {
 // 1. ACTION: list_events (Mengambil daftar event untuk aplikasi Windows)
 // =========================================================================
 if ($action === 'list_events') {
+    // Keamanan privasi: list_events tidak boleh diakses oleh publik via browser URL
+    $has_header_auth = !empty($_SERVER['HTTP_X_API_KEY']) || (!empty($req_key) && $_SERVER['REQUEST_METHOD'] === 'POST');
+    if (!$is_admin_session && !$has_header_auth) {
+        http_response_code(403);
+        echo json_encode([
+            'status' => 'error',
+            'message' => '403 Forbidden: Akses publik daftar event ditutup demi menjaga privasi data klien.'
+        ]);
+        exit;
+    }
+
     $stmt = $pdo->query("SELECT * FROM clients ORDER BY tanggal_event DESC, jam_mulai DESC");
     $clients = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
