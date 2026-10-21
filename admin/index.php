@@ -245,89 +245,152 @@ function countLocalPhotos($c) {
             </form>
         </div>
 
-        <div class="bg-white rounded-lg shadow-md p-6">
-            <h2 class="text-2xl font-bold mb-4">Daftar Klien</h2>
-            <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-gray-200">
-                    <thead>
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-5">
+                <div>
+                    <h2 class="text-xl font-extrabold text-slate-900">Daftar Klien & Event Photobooth</h2>
+                    <p class="text-xs text-slate-500 mt-0.5">Kelola link direct tamu, link VIP download ZIP, dan foto galeri tiap acara.</p>
+                </div>
+                <span class="self-start sm:self-auto bg-slate-100 text-slate-700 text-xs font-bold px-3 py-1 rounded-full border border-slate-200">
+                    Total: <?= count($clients) ?> Klien
+                </span>
+            </div>
+
+            <div class="overflow-x-auto rounded-xl border border-slate-200">
+                <table class="min-w-full divide-y divide-slate-200 bg-white">
+                    <thead class="bg-slate-50">
                         <tr>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Nama</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Lokasi</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Jadwal</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Link QR & Galeri</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">QR Code</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Aksi</th>
+                            <th class="px-5 py-3.5 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Klien & Acara</th>
+                            <th class="px-5 py-3.5 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Link Direct Tamu (QR)</th>
+                            <th class="px-5 py-3.5 text-left text-xs font-bold text-amber-800 uppercase tracking-wider">Link Khusus Klien (VIP ZIP)</th>
+                            <th class="px-5 py-3.5 text-right text-xs font-bold text-slate-600 uppercase tracking-wider">Aksi</th>
                         </tr>
                     </thead>
-                    <tbody class="divide-y divide-gray-200">
-                        <?php foreach($clients as $c): 
-                            $direct_link = buildDirectLink($c, $base_url);
-                            $photo_count = countLocalPhotos($c);
-                            $folder_c = resolveClientFolder($c);
-                            $internal_gallery_url = rtrim($base_url, '/') . '/client/' . rawurlencode($folder_c);
-                            $is_auto_lokasi = (trim($c['lokasi'] ?? '') === '' || trim($c['lokasi'] ?? '') === '-');
-                        ?>
-                        <tr>
-                            <td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900">
-                                <?= htmlspecialchars($c['nama_client']) ?>
-                                <div class="mt-1.5 flex items-center gap-1.5 flex-wrap">
-                                    <a href="gallery.php?id=<?= $c['id'] ?>" class="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full <?= $photo_count > 0 ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' : 'bg-gray-100 text-gray-600 hover:bg-gray-200' ?>">
-                                        🖼️ Kelola <?= $photo_count ?> Foto
-                                    </a>
-                                    <a href="<?= htmlspecialchars($internal_gallery_url) ?>" target="_blank" class="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 hover:bg-emerald-100">
-                                        👁️ Lihat Galeri ↗
-                                    </a>
-                                    <?php if ($is_auto_lokasi): ?>
-                                        <a href="edit.php?id=<?= $c['id'] ?>" class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 hover:bg-amber-200">
-                                            ⚡ Auto LumaBooth (Klik Edit Data)
+                    <tbody class="divide-y divide-slate-200">
+                        <?php if (empty($clients)): ?>
+                            <tr>
+                                <td colspan="4" class="px-6 py-12 text-center text-slate-400 text-sm">
+                                    Belum ada data klien. Silakan tambahkan klien baru di atas.
+                                </td>
+                            </tr>
+                        <?php else: ?>
+                            <?php foreach($clients as $c): 
+                                $direct_link = buildDirectLink($c, $base_url);
+                                $photo_count = countLocalPhotos($c);
+                                $folder_c = resolveClientFolder($c);
+                                $internal_gallery_url = rtrim($base_url, '/') . '/client/' . rawurlencode($folder_c);
+                                $is_auto_lokasi = (trim($c['lokasi'] ?? '') === '' || trim($c['lokasi'] ?? '') === '-');
+
+                                $tgl_obj = strtotime($c['tanggal_event']);
+                                $bulan_indo = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+                                $tgl_formatted = $tgl_obj ? (date('d', $tgl_obj) . ' ' . $bulan_indo[(int)date('m', $tgl_obj) - 1] . ' ' . date('Y', $tgl_obj)) : $c['tanggal_event'];
+                                $jam_formatted = substr($c['jam_mulai'], 0, 5) . ' - ' . substr($c['jam_selesai'], 0, 5) . ' WIB';
+                            ?>
+                            <tr class="hover:bg-slate-50/70 transition">
+                                <!-- Kolom 1: Klien & Acara -->
+                                <td class="px-5 py-4 align-top w-[30%] min-w-[260px]">
+                                    <div class="font-extrabold text-slate-900 text-base leading-snug mb-1.5">
+                                        <?= htmlspecialchars($c['nama_client']) ?>
+                                    </div>
+
+                                    <div class="space-y-1 mb-2.5">
+                                        <div class="text-xs text-slate-600 flex items-center gap-1.5 font-medium">
+                                            <span>📅 <?= $tgl_formatted ?></span>
+                                            <span class="text-slate-300">•</span>
+                                            <span>🕒 <?= $jam_formatted ?></span>
+                                        </div>
+                                        <div class="text-xs">
+                                            <?php if ($is_auto_lokasi): ?>
+                                                <a href="edit.php?id=<?= $c['id'] ?>" class="inline-flex items-center gap-1 text-amber-600 font-semibold hover:underline">
+                                                    📍 + Isi Lokasi Acara
+                                                </a>
+                                            <?php else: ?>
+                                                <div class="text-slate-600 flex items-start gap-1 leading-snug">
+                                                    <span class="flex-shrink-0">📍</span>
+                                                    <span><?= nl2br(htmlspecialchars($c['lokasi'])) ?></span>
+                                                </div>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
+
+                                    <div class="flex items-center gap-1.5 flex-wrap">
+                                        <a href="<?= htmlspecialchars($internal_gallery_url) ?>" target="_blank" class="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition">
+                                            👁️ Lihat Galeri ↗
                                         </a>
-                                    <?php endif; ?>
-                                </div>
-                            </td>
-                            <td class="px-6 py-4 whitespace-pre-wrap text-sm leading-snug">
-                                <?php if ($is_auto_lokasi): ?>
-                                    <a href="edit.php?id=<?= $c['id'] ?>" class="text-xs text-amber-600 font-semibold hover:underline">+ Isi Lokasi Acara</a>
-                                <?php else: ?>
-                                    <?= htmlspecialchars($c['lokasi']) ?>
-                                <?php endif; ?>
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm"><?= $c['tanggal_event'] ?> <br> <span class="text-gray-500"><?= $c['jam_mulai'] ?> - <?= $c['jam_selesai'] ?></span></td>
-                            <td class="px-6 py-4 text-sm">
-                                <div class="mb-2">
-                                    <span class="text-[11px] font-bold uppercase text-blue-600 block">Link Direct Tamu (QR):</span>
-                                    <div class="flex items-center gap-2 mt-0.5">
-                                        <a href="<?= htmlspecialchars($direct_link) ?>" target="_blank" class="bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded font-mono text-xs hover:underline break-all"><?= htmlspecialchars($direct_link) ?></a>
-                                        <button type="button" onclick="copyText('<?= htmlspecialchars($direct_link, ENT_QUOTES) ?>', this)" class="text-xs bg-slate-800 text-white px-2 py-0.5 rounded hover:bg-slate-700 whitespace-nowrap">Copy</button>
+                                        <?php if ($is_auto_lokasi): ?>
+                                            <span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200" title="Dibuat otomatis oleh sistem saat foto pertama dikirim dari LumaBooth">
+                                                ⚡ Auto LumaBooth
+                                            </span>
+                                        <?php endif; ?>
                                     </div>
-                                </div>
-                                <div class="mb-2">
-                                    <span class="text-[11px] font-bold uppercase text-indigo-700 block">👑 Link Khusus Client (Download All ZIP):</span>
-                                    <div class="flex items-center gap-2 mt-0.5">
-                                        <a href="<?= htmlspecialchars($direct_link . '/vip') ?>" target="_blank" class="bg-indigo-50 text-indigo-800 border border-indigo-200 px-2 py-0.5 rounded font-mono text-xs font-semibold hover:underline break-all"><?= htmlspecialchars($direct_link . '/vip') ?></a>
-                                        <button type="button" onclick="copyText('<?= htmlspecialchars($direct_link . '/vip', ENT_QUOTES) ?>', this)" class="text-xs bg-indigo-700 text-white px-2 py-0.5 rounded hover:bg-indigo-800 whitespace-nowrap">Copy VIP</button>
+                                </td>
+
+                                <!-- Kolom 2: Link Direct Tamu (QR) -->
+                                <td class="px-5 py-4 align-top w-[28%] min-w-[270px]">
+                                    <div class="bg-blue-50/80 border border-blue-200 rounded-xl p-3 shadow-2xs">
+                                        <div class="flex items-center justify-between gap-2 mb-1.5">
+                                            <span class="text-[11px] font-extrabold uppercase tracking-wide text-blue-700 flex items-center gap-1">
+                                                🔗 Link Tamu (QR)
+                                            </span>
+                                            <a href="../<?= htmlspecialchars($c['qr_code_path']) ?>" target="_blank" class="inline-flex items-center gap-1 text-[10px] font-bold bg-white text-blue-700 border border-blue-200 hover:bg-blue-600 hover:text-white px-2 py-0.5 rounded-md shadow-2xs transition">
+                                                📱 QR Code
+                                            </a>
+                                        </div>
+                                        <div class="flex items-center gap-1 bg-white border border-blue-100 rounded-lg p-1">
+                                            <input type="text" readonly value="<?= htmlspecialchars($direct_link) ?>" class="w-full bg-transparent text-xs font-mono text-slate-700 border-none outline-none focus:ring-0 select-all truncate px-1" title="<?= htmlspecialchars($direct_link) ?>">
+                                            <button type="button" onclick="copyText('<?= htmlspecialchars($direct_link, ENT_QUOTES) ?>', this)" class="bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold px-2.5 py-1 rounded-md transition whitespace-nowrap shadow-xs">
+                                                Salin
+                                            </button>
+                                            <a href="<?= htmlspecialchars($direct_link) ?>" target="_blank" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold px-2 py-1 rounded-md transition whitespace-nowrap" title="Buka Link Tamu">
+                                                ↗
+                                            </a>
+                                        </div>
                                     </div>
-                                </div>
-                                <div>
-                                    <span class="text-[11px] font-bold uppercase text-gray-400 block">Tujuan Akhir (Folder / URL):</span>
-                                    <?php if (strpos($c['folder_foto_path'], 'uploads/gallery/') === 0): ?>
-                                        <a href="<?= htmlspecialchars($internal_gallery_url) ?>" target="_blank" class="text-emerald-600 font-semibold hover:underline font-mono text-xs break-all">Portal Gallery Internal (<?= htmlspecialchars($c['folder_foto_path']) ?>)</a>
-                                    <?php else: ?>
-                                        <a href="<?= htmlspecialchars($c['folder_foto_path']) ?>" target="_blank" class="text-gray-500 hover:underline font-mono text-xs break-all"><?= htmlspecialchars($c['folder_foto_path']) ?></a>
-                                    <?php endif; ?>
-                                </div>
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap">
-                                <a href="<?= '../' . $c['qr_code_path'] ?>" target="_blank" class="text-blue-600 hover:underline font-medium">Lihat QR</a>
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold space-x-2">
-                                <a href="gallery.php?id=<?= $c['id'] ?>" class="inline-flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm transition">
-                                    🖼️ Kelola Foto
-                                </a>
-                                <a href="edit.php?id=<?= $c['id'] ?>" class="inline-flex items-center bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 transition">Edit Info</a>
-                                <a href="?delete=<?= $c['id'] ?>" onclick="return confirm('Yakin ingin menghapus?')" class="inline-flex items-center bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold px-2.5 py-1.5 rounded-lg border border-red-200 transition">Hapus</a>
-                            </td>
-                        </tr>
-                        <?php endforeach; ?>
+                                </td>
+
+                                <!-- Kolom 3: Link Khusus Klien (VIP) -->
+                                <td class="px-5 py-4 align-top w-[28%] min-w-[270px]">
+                                    <div class="bg-gradient-to-r from-amber-50 to-orange-50/60 border border-amber-200 rounded-xl p-3 shadow-2xs">
+                                        <div class="flex items-center justify-between gap-2 mb-1.5">
+                                            <span class="text-[11px] font-extrabold uppercase tracking-wide text-amber-800 flex items-center gap-1">
+                                                👑 Link Khusus Klien (VIP)
+                                            </span>
+                                            <span class="text-[10px] text-amber-800 font-bold bg-amber-100 border border-amber-200 px-1.5 py-0.2 rounded">ZIP</span>
+                                        </div>
+                                        <div class="flex items-center gap-1 bg-white border border-amber-200 rounded-lg p-1">
+                                            <input type="text" readonly value="<?= htmlspecialchars($direct_link . '/vip') ?>" class="w-full bg-transparent text-xs font-mono text-amber-950 font-semibold border-none outline-none focus:ring-0 select-all truncate px-1" title="<?= htmlspecialchars($direct_link . '/vip') ?>">
+                                            <button type="button" onclick="copyText('<?= htmlspecialchars($direct_link . '/vip', ENT_QUOTES) ?>', this)" class="bg-amber-500 hover:bg-amber-600 text-white text-[11px] font-bold px-2.5 py-1 rounded-md transition whitespace-nowrap shadow-xs">
+                                                Salin VIP
+                                            </button>
+                                            <a href="<?= htmlspecialchars($direct_link . '/vip') ?>" target="_blank" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold px-2 py-1 rounded-md transition whitespace-nowrap" title="Buka Link Khusus VIP">
+                                                ↗
+                                            </a>
+                                        </div>
+                                        <p class="text-[10px] text-amber-700/80 mt-1 font-medium">
+                                            ✨ Halaman download all media ZIP untuk pengantin
+                                        </p>
+                                    </div>
+                                </td>
+
+                                <!-- Kolom 4: Aksi -->
+                                <td class="px-5 py-4 align-top text-right w-[14%] whitespace-nowrap">
+                                    <div class="flex flex-col gap-2 items-end">
+                                        <a href="gallery.php?id=<?= $c['id'] ?>" class="w-full inline-flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-2 rounded-xl shadow-xs transition">
+                                            🖼️ Kelola Foto (<?= $photo_count ?>)
+                                        </a>
+                                        <div class="flex items-center gap-1.5 w-full justify-end">
+                                            <a href="edit.php?id=<?= $c['id'] ?>" class="flex-1 text-center bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 transition">
+                                                ✏️ Edit
+                                            </a>
+                                            <a href="?delete=<?= $c['id'] ?>" onclick="return confirm('Yakin ingin menghapus klien ini beserta seluruh datanya?')" class="flex-1 text-center bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold px-2.5 py-1.5 rounded-lg border border-red-200 transition">
+                                                🗑️ Hapus
+                                            </a>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
                     </tbody>
                 </table>
             </div>
@@ -347,11 +410,12 @@ function countLocalPhotos($c) {
         function copyText(text, btn) {
             navigator.clipboard.writeText(text).then(() => {
                 const orig = btn.innerText;
-                btn.innerText = 'Copied!';
-                btn.classList.replace('bg-slate-800', 'bg-green-600');
+                btn.innerText = '✓ Tersalin!';
+                const origBg = btn.className;
+                btn.className = btn.className.replace(/bg-\w+-\d+/, 'bg-emerald-600').replace(/hover:bg-\w+-\d+/, 'hover:bg-emerald-700');
                 setTimeout(() => {
                     btn.innerText = orig;
-                    btn.classList.replace('bg-green-600', 'bg-slate-800');
+                    btn.className = origBg;
                 }, 1500);
             });
         }
