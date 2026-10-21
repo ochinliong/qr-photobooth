@@ -2,105 +2,82 @@
 SETLOCAL EnableDelayedExpansion
 
 :: ============================================================================
-:: YUHU PHOTOBOOTH - LUMABOOTH WINDOWS (OKTOBER 2026) NATIVE TRIGGER v5
+:: YUHU PHOTOBOOTH - LUMABOOTH WINDOWS (OKTOBER 2026) UNIVERSAL SYNC & TRIGGER
 :: ============================================================================
-:: Dipasang langsung pada LumaBooth -> Settings -> Triggers -> Application:
-::   C:\YUHU\YUHU v5.bat
-::   Data Directory: C:\dslrBooth
+:: Mendukung 2 Cara Kerja Sekaligus (Di Komputer Mana Saja):
+:: 1. Dipanggil Otomatis oleh LumaBooth Trigger (Settings -> Triggers -> Application)
+:: 2. Diklik 2x Langsung oleh Operator (Otomatis jalan di belakang layar tanpa
+::    jendela mengganggu, memantau folder LumaBooth terus-menerus selama 6+ jam!)
+::
+:: KEUNGGULAN:
+:: - Bebas Bug Spasi Nama File (Aman dinamai "YUHU v7.bat", "YUHU v5.bat", dll)
+:: - Auto-Detect Lokasi Folder dslrBooth / LumaBooth di PC mana pun:
+::   (C:\dslrBooth, D:\dslrBooth, Pictures\dslrBooth, Pictures\LumaBooth, Documents\dslrBooth)
+:: - Prioritas CPU Rendah (/BELOWNORMAL) -> 100% Aman untuk Kamera & Printer
+:: - Anti-Gagal Upload (Antrean Offline Otomatis saat Internet/Listrik Mati)
 :: ============================================================================
 
 SET "API_URL_PRIMARY=https://files.yuhu.co.id/client/api_upload.php"
 SET "API_URL_FALLBACK=https://qr.yuhu.co.id/client/api_upload.php"
-
 SET "API_TOKEN=YuhuSecretToken2026"
-SET "DSLRBOOTH_DIR=C:\dslrBooth"
+
 SET "CURL=%SystemRoot%\System32\curl.exe"
 IF NOT EXIST "%CURL%" SET "CURL=curl.exe"
+
 SET "SELF=%~f0"
 SET "WORK_DIR=%~dp0"
 SET "QUEUE_FILE=%WORK_DIR%upload_queue.txt"
 SET "SENT_LOG=%WORK_DIR%sent_history.txt"
 SET "LOCK_FILE=%WORK_DIR%worker.lock"
+SET "DAEMON_LOCK=%WORK_DIR%daemon.lock"
 SET "LOG_FILE=%WORK_DIR%last_upload.log"
 
 :: ============================================================================
-:: MODE 1: BACKGROUND WORKER (Memproses Antrean Upload Satu per Satu)
+:: AUTO-DETECT LOKASI FOLDER DATA LUMABOOTH / DSLRBOOTH DI PC INI
 :: ============================================================================
-IF /I "%~1"=="WORKER" GOTO :worker_entry
+SET "DSLRBOOTH_DIR=C:\dslrBooth"
+IF EXIST "C:\dslrBooth" GOTO :dir_detected
+IF EXIST "D:\dslrBooth" (SET "DSLRBOOTH_DIR=D:\dslrBooth" & GOTO :dir_detected)
+IF EXIST "%USERPROFILE%\Pictures\dslrBooth" (SET "DSLRBOOTH_DIR=%USERPROFILE%\Pictures\dslrBooth" & GOTO :dir_detected)
+IF EXIST "%USERPROFILE%\Pictures\LumaBooth" (SET "DSLRBOOTH_DIR=%USERPROFILE%\Pictures\LumaBooth" & GOTO :dir_detected)
+IF EXIST "%USERPROFILE%\Documents\dslrBooth" (SET "DSLRBOOTH_DIR=%USERPROFILE%\Documents\dslrBooth" & GOTO :dir_detected)
+IF EXIST "C:\LumaBooth" (SET "DSLRBOOTH_DIR=C:\LumaBooth" & GOTO :dir_detected)
+:dir_detected
 
 :: ============================================================================
-:: MODE 2: DELAYED SINGLES FINDER (Menunggu LumaBooth selesai menulis Singles)
+:: ROUTING MODE EKSEKUSI INTERNAL
 :: ============================================================================
-IF /I "%~1"=="BG_SINGLES" (
-    SET "FILE_NAME=%~2"
-    ping 127.0.0.1 -n 11 >nul 2>&1
-    FOR /D %%E IN ("%DSLRBOOTH_DIR%\*") DO (
-        SET "ENAME=%%~nxE"
-        IF /I NOT "!ENAME!"=="Settings" IF /I NOT "!ENAME!"=="Templates" (
-            IF EXIST "%%E\Singles\!FILE_NAME!" (
-                >> "%QUEUE_FILE%" ECHO %%E\Singles\!FILE_NAME!
-                START "" /B /BELOWNORMAL cmd /c ""!SELF!" WORKER" >nul 2>&1
-                EXIT /B 0
-            )
-        )
-    )
-    EXIT /B 0
-)
+IF /I "%~1"=="WORKER"     GOTO :worker_entry
+IF /I "%~1"=="BG_SINGLES" GOTO :bg_singles_entry
+IF /I "%~1"=="BG_SWEEP"   GOTO :bg_sweep_entry
+IF /I "%~1"=="BG_DAEMON"  GOTO :bg_daemon_entry
 
 :: ============================================================================
-:: MODE 3: SESSION SWEEPER (Memindai file sesi terbaru di C:\dslrBooth)
-:: Berjalan otomatis saat session_end / sharing_screen walaupun Fotoshare OFF!
-:: ============================================================================
-IF /I "%~1"=="BG_SWEEP" (
-    ping 127.0.0.1 -n 5 >nul 2>&1
-    IF NOT EXIST "%SENT_LOG%" TYPE nul > "%SENT_LOG%"
-
-    :: Cari folder event paling baru yang sedang aktif di C:\dslrBooth
-    SET "LATEST_EVENT_DIR="
-    FOR /F "delims=" %%D IN ('DIR "%DSLRBOOTH_DIR%" /AD /B /O-D 2^>nul') DO (
-        IF /I NOT "%%D"=="Settings" IF /I NOT "%%D"=="Templates" (
-            SET "LATEST_EVENT_DIR=%DSLRBOOTH_DIR%\%%D"
-            GOTO :sweep_event_found
-        )
-    )
-    EXIT /B 0
-
-    :sweep_event_found
-    :: Ambil 10 file terbaru dari Prints, Animated, Videos, GIFs, dan Singles
-    FOR %%M IN (Prints Animated Videos GIFs Singles) DO (
-        IF EXIST "!LATEST_EVENT_DIR!\%%M" (
-            SET "COUNT_M=0"
-            FOR /F "delims=" %%F IN ('DIR "!LATEST_EVENT_DIR!\%%M" /A-D /B /O-D 2^>nul') DO (
-                SET /A COUNT_M+=1
-                IF !COUNT_M! LEQ 10 (
-                    SET "CANDIDATE=!LATEST_EVENT_DIR!\%%M\%%F"
-                    :: Abaikan file _mp4.jpg
-                    SET "FN=%%F"
-                    IF /I "!FN:_mp4.jpg=!"=="!FN!" (
-                        FINDSTR /I /C:"!CANDIDATE!" "%SENT_LOG%" >nul 2>&1
-                        IF ERRORLEVEL 1 (
-                            >> "%QUEUE_FILE%" ECHO !CANDIDATE!
-                        )
-                    )
-                )
-            )
-        )
-    )
-    START "" /B /BELOWNORMAL cmd /c ""!SELF!" WORKER" >nul 2>&1
-    EXIT /B 0
-)
-
-:: ============================================================================
-:: MODE 4: STARTUP / MANUAL RUN (Jika diklik 2x langsung oleh operator)
+:: JIKA DIKLIK 2X LANGSUNG OLEH OPERATOR (TANPA ARGUMEN DARI LUMABOOTH)
 :: ============================================================================
 SET "EVENT_TYPE=%~1"
 IF "%EVENT_TYPE%"=="" (
-    START "" /B /BELOWNORMAL cmd /c ""!SELF!" BG_SWEEP" >nul 2>&1
+    ECHO =====================================================================
+    ECHO   YUHU PHOTOBOOTH - LUMABOOTH CLOUD AUTO-UPLOADER AKTIF
+    ECHO =====================================================================
+    ECHO   Folder Data LumaBooth : "!DSLRBOOTH_DIR!"
+    ECHO   Folder Kerja Script   : "!WORK_DIR!"
+    ECHO   Target Cloud Server   : !API_URL_PRIMARY!
+    ECHO =====================================================================
+    ECHO.
+    ECHO [*] Memulai pemantauan otomatis di latar belakang ^(Low CPU Priority^)...
+    PUSHD "%WORK_DIR%"
+    START "" /B /BELOWNORMAL cmd /d /c "call "%~nx0" BG_DAEMON" >nul 2>&1
+    POPD
+    ECHO [V] Berhasil aktif! Semua foto di "!DSLRBOOTH_DIR!" akan otomatis
+    ECHO     di-upload ke Cloud Portal setiap ada foto baru.
+    ECHO     Jendela ini akan menutup otomatis dalam 3 detik...
+    ping 127.0.0.1 -n 4 >nul 2>&1
     EXIT /B 0
 )
 
 :: ============================================================================
-:: FILTER EVENT LUMABOOTH YANG TIDAK RELEVAN (Keluar Instan < 1ms)
+:: FILTER EVENT TRIGGER LUMABOOTH (Keluar Instan < 1ms)
 :: ============================================================================
 IF /I "%EVENT_TYPE%"=="countdown"        EXIT /B 0
 IF /I "%EVENT_TYPE%"=="countdown_start"  EXIT /B 0
@@ -108,13 +85,17 @@ IF /I "%EVENT_TYPE%"=="session_start"    EXIT /B 0
 IF /I "%EVENT_TYPE%"=="processing_start" EXIT /B 0
 IF /I "%EVENT_TYPE%"=="capture_start"    EXIT /B 0
 
-:: Saat sharing_screen atau session_end muncul, jalankan pemindai sesi terbaru (BG_SWEEP)
+:: Saat sharing_screen atau session_end muncul di LumaBooth, pindai sesi terbaru!
 IF /I "%EVENT_TYPE%"=="sharing_screen" (
-    START "" /B /BELOWNORMAL cmd /c ""!SELF!" BG_SWEEP" >nul 2>&1
+    PUSHD "%WORK_DIR%"
+    START "" /B /BELOWNORMAL cmd /d /c "call "%~nx0" BG_SWEEP" >nul 2>&1
+    POPD
     EXIT /B 0
 )
 IF /I "%EVENT_TYPE%"=="session_end" (
-    START "" /B /BELOWNORMAL cmd /c ""!SELF!" BG_SWEEP" >nul 2>&1
+    PUSHD "%WORK_DIR%"
+    START "" /B /BELOWNORMAL cmd /d /c "call "%~nx0" BG_SWEEP" >nul 2>&1
+    POPD
     EXIT /B 0
 )
 
@@ -145,7 +126,9 @@ IF /I NOT "!FNAME:_mp4.jpg=!"=="!FNAME!" EXIT /B 0
 IF /I NOT "!FILE_PARAM:\thumb\=!"=="!FILE_PARAM!" EXIT /B 0
 
 >> "%QUEUE_FILE%" ECHO !FILE_PARAM!
-START "" /B /BELOWNORMAL cmd /c ""!SELF!" WORKER" >nul 2>&1
+PUSHD "%WORK_DIR%"
+START "" /B /BELOWNORMAL cmd /d /c "call "%~nx0" WORKER" >nul 2>&1
+POPD
 EXIT /B 0
 
 :check_download_event
@@ -160,7 +143,9 @@ IF /I "%EVENT_TYPE%"=="file_download" (
     )
     IF "!VALID_EXT!"=="0" EXIT /B 0
 
-    START "" /B /BELOWNORMAL cmd /c ""!SELF!" BG_SINGLES "!FILE_PARAM!"" >nul 2>&1
+    PUSHD "%WORK_DIR%"
+    START "" /B /BELOWNORMAL cmd /d /c "call "%~nx0" BG_SINGLES "!FILE_PARAM!"" >nul 2>&1
+    POPD
     EXIT /B 0
 )
 
@@ -168,7 +153,98 @@ EXIT /B 0
 
 
 :: ============================================================================
-:: PROSES WORKER SINGLE-INSTANCE (Hanya 1 Worker yang boleh jalan di satu waktu)
+:: SUB-MODE: BG_SINGLES (Mencari foto Singles 10 detik setelah jepretan kamera)
+:: ============================================================================
+:bg_singles_entry
+SET "FILE_NAME=%~2"
+ping 127.0.0.1 -n 11 >nul 2>&1
+FOR /D %%E IN ("%DSLRBOOTH_DIR%\*") DO (
+    SET "ENAME=%%~nxE"
+    IF /I NOT "!ENAME!"=="Settings" IF /I NOT "!ENAME!"=="Templates" (
+        IF EXIST "%%E\Singles\!FILE_NAME!" (
+            >> "%QUEUE_FILE%" ECHO %%E\Singles\!FILE_NAME!
+            PUSHD "%WORK_DIR%"
+            START "" /B /BELOWNORMAL cmd /d /c "call "%~nx0" WORKER" >nul 2>&1
+            POPD
+            EXIT /B 0
+        )
+    )
+)
+EXIT /B 0
+
+
+:: ============================================================================
+:: SUB-MODE: BG_DAEMON (Berjalan Non-Stop di Background jika diklik 2x)
+:: ============================================================================
+:bg_daemon_entry
+CALL :locked_daemon 8>>"%DAEMON_LOCK%"
+EXIT /B 0
+
+:locked_daemon
+:daemon_loop
+CALL :do_sweep_scan
+CALL :worker_entry
+ping 127.0.0.1 -n 6 >nul 2>&1
+GOTO :daemon_loop
+
+
+:: ============================================================================
+:: SUB-MODE: BG_SWEEP (Memindai file terbaru di folder Event Aktif LumaBooth)
+:: ============================================================================
+:bg_sweep_entry
+ping 127.0.0.1 -n 4 >nul 2>&1
+CALL :do_sweep_scan
+PUSHD "%WORK_DIR%"
+START "" /B /BELOWNORMAL cmd /d /c "call "%~nx0" WORKER" >nul 2>&1
+POPD
+EXIT /B 0
+
+:do_sweep_scan
+IF NOT EXIST "%SENT_LOG%" TYPE nul > "%SENT_LOG%"
+IF NOT EXIST "%DSLRBOOTH_DIR%" EXIT /B 0
+
+:: Cari folder event paling baru di C:\dslrBooth
+SET "LATEST_EVENT_DIR="
+FOR /F "delims=" %%D IN ('DIR "%DSLRBOOTH_DIR%" /AD /B /O-D 2^>nul') DO (
+    IF /I NOT "%%D"=="Settings" IF /I NOT "%%D"=="Templates" (
+        SET "LATEST_EVENT_DIR=%DSLRBOOTH_DIR%\%%D"
+        GOTO :sweep_found
+    )
+)
+EXIT /B 0
+
+:sweep_found
+:: Pindai hingga 25 file terbaru di setiap subfolder Prints, Animated, Videos, GIFs, Singles
+FOR %%M IN (Prints Animated Videos GIFs Singles) DO (
+    IF EXIST "!LATEST_EVENT_DIR!\%%M" (
+        SET "COUNT_M=0"
+        FOR /F "delims=" %%F IN ('DIR "!LATEST_EVENT_DIR!\%%M" /A-D /B /O-D 2^>nul') DO (
+            SET /A COUNT_M+=1
+            IF !COUNT_M! LEQ 25 (
+                SET "CANDIDATE=!LATEST_EVENT_DIR!\%%M\%%F"
+                SET "FN=%%F"
+                IF /I "!FN:_mp4.jpg=!"=="!FN!" (
+                    FINDSTR /I /C:"!CANDIDATE!" "%SENT_LOG%" >nul 2>&1
+                    IF ERRORLEVEL 1 (
+                        IF EXIST "%QUEUE_FILE%" (
+                            FINDSTR /I /C:"!CANDIDATE!" "%QUEUE_FILE%" >nul 2>&1
+                            IF ERRORLEVEL 1 (
+                                >> "%QUEUE_FILE%" ECHO !CANDIDATE!
+                            )
+                        ) ELSE (
+                            >> "%QUEUE_FILE%" ECHO !CANDIDATE!
+                        )
+                    )
+                )
+            )
+        )
+    )
+)
+EXIT /B 0
+
+
+:: ============================================================================
+:: PROSES WORKER SINGLE-INSTANCE (Hanya 1 Worker yang boleh upload di satu waktu)
 :: ============================================================================
 :worker_entry
 CALL :locked_worker 9>>"%LOCK_FILE%"
@@ -193,7 +269,7 @@ FOR /L %%i IN (1,1,5) DO IF "!CURRENT_FILE:~-1!"==" " SET "CURRENT_FILE=!CURRENT
 IF "!CURRENT_FILE!"=="" GOTO :pop_queue
 IF NOT EXIST "!CURRENT_FILE!" GOTO :pop_queue
 
-:: Jika sudah tercatat di sent_history.txt, langsung lewati agar tidak upload ganda
+:: Jika sudah pernah sukses diupload, lewati agar tidak upload ganda
 FINDSTR /I /C:"!CURRENT_FILE!" "%SENT_LOG%" >nul 2>&1
 IF NOT ERRORLEVEL 1 GOTO :pop_queue
 
