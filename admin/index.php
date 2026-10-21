@@ -22,8 +22,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
         mkdir($qr_folder_path, 0777, true);
     }
 
-    // Generate QR Code via API, pointing to EXTERNAL URL
-    $qr_data = $link_galeri;
+    // Buat Direct Link Otomatis sesuai Tahun & Nama Klien (tanpa spasi)
+    $tahun_event = date('Y', strtotime($tanggal_event));
+    $nama_clean = preg_replace('/\s+/', '', $nama_client);
+    $custom_direct_link = rtrim($base_url, '/') . '/' . $tahun_event . '/' . $nama_clean;
+
+    // Generate QR Code via API, pointing to CUSTOM DIRECT LINK
+    $qr_data = $custom_direct_link;
     $qr_api = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' . urlencode($qr_data);
     $qr_filename = $slug . '.png';
     $qr_filepath = '../uploads/qrcodes/' . $qr_filename;
@@ -70,6 +75,13 @@ if (isset($_GET['delete'])) {
 }
 
 $clients = $pdo->query("SELECT * FROM clients ORDER BY created_at DESC")->fetchAll();
+
+// Helper untuk membuat Direct Link otomatis dari data klien
+function buildDirectLink($c, $base_url) {
+    $year = date('Y', strtotime($c['tanggal_event']));
+    $clean_name = preg_replace('/\s+/', '', $c['nama_client']);
+    return rtrim($base_url, '/') . '/' . $year . '/' . $clean_name;
+}
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -97,19 +109,22 @@ $clients = $pdo->query("SELECT * FROM clients ORDER BY created_at DESC")->fetchA
                 <input type="hidden" name="action" value="add">
                 <div>
                     <label class="block text-sm font-medium text-gray-700">Nama Klien</label>
-                    <input type="text" name="nama_client" required class="mt-1 w-full px-3 py-2 border rounded-md">
+                    <input type="text" name="nama_client" id="input_nama" placeholder="Contoh: Fathya & Fadhil (Wedding)" required class="mt-1 w-full px-3 py-2 border rounded-md" oninput="updatePreviewLink()">
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700">Lokasi Acara</label>
                     <textarea name="lokasi" placeholder="Baris 1: Nama Gedung&#10;Baris 2: Nama Kota" required class="mt-1 w-full px-3 py-2 border rounded-md" rows="2"></textarea>
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-700">Link Galeri (Tujuan QR)</label>
-                    <input type="url" name="folder_foto_path" placeholder="https://qr.yuhu.co.id/client/Nama..." required class="mt-1 w-full px-3 py-2 border rounded-md">
+                    <label class="block text-sm font-medium text-gray-700">Link Galeri (Tujuan Akhir / Folder Foto)</label>
+                    <input type="url" name="folder_foto_path" placeholder="https://fotoshare.co/e/..." required class="mt-1 w-full px-3 py-2 border rounded-md">
+                    <p class="text-xs text-blue-600 mt-1.5 font-medium" id="preview_direct_link">
+                        🔗 Link QR Otomatis: <span class="underline font-mono">https://files.yuhu.co.id/<?= date('Y') ?>/NamaKlien</span>
+                    </p>
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700">Tanggal Event</label>
-                    <input type="date" name="tanggal_event" required class="mt-1 w-full px-3 py-2 border rounded-md">
+                    <input type="date" name="tanggal_event" id="input_tanggal" required class="mt-1 w-full px-3 py-2 border rounded-md" onchange="updatePreviewLink()">
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700">Jam Mulai</label>
@@ -120,7 +135,7 @@ $clients = $pdo->query("SELECT * FROM clients ORDER BY created_at DESC")->fetchA
                     <input type="time" name="jam_selesai" required class="mt-1 w-full px-3 py-2 border rounded-md">
                 </div>
                 <div class="md:col-span-2">
-                    <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Simpan & Generate QR</button>
+                    <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 font-semibold">Simpan & Generate QR</button>
                 </div>
             </form>
         </div>
@@ -134,20 +149,34 @@ $clients = $pdo->query("SELECT * FROM clients ORDER BY created_at DESC")->fetchA
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Nama</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Lokasi</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Jadwal</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Folder Foto</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Link QR & Tujuan</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">QR Code</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Aksi</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-200">
-                        <?php foreach($clients as $c): ?>
+                        <?php foreach($clients as $c): 
+                            $direct_link = buildDirectLink($c, $base_url);
+                        ?>
                         <tr>
-                            <td class="px-6 py-4 whitespace-nowrap"><?= htmlspecialchars($c['nama_client']) ?></td>
+                            <td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900"><?= htmlspecialchars($c['nama_client']) ?></td>
                             <td class="px-6 py-4 whitespace-pre-wrap text-sm leading-snug"><?= htmlspecialchars($c['lokasi'] ?? '-') ?></td>
-                            <td class="px-6 py-4 whitespace-nowrap"><?= $c['tanggal_event'] ?> <br> <?= $c['jam_mulai'] ?> - <?= $c['jam_selesai'] ?></td>
-                            <td class="px-6 py-4 whitespace-nowrap"><code class="bg-gray-100 p-1 rounded"><?= $c['folder_foto_path'] ?></code></td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm"><?= $c['tanggal_event'] ?> <br> <span class="text-gray-500"><?= $c['jam_mulai'] ?> - <?= $c['jam_selesai'] ?></span></td>
+                            <td class="px-6 py-4 text-sm">
+                                <div class="mb-1.5">
+                                    <span class="text-[11px] font-bold uppercase text-blue-600 block">Link Direct (QR):</span>
+                                    <div class="flex items-center gap-2 mt-0.5">
+                                        <a href="<?= htmlspecialchars($direct_link) ?>" target="_blank" class="bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded font-mono text-xs hover:underline break-all"><?= htmlspecialchars($direct_link) ?></a>
+                                        <button type="button" onclick="copyText('<?= htmlspecialchars($direct_link, ENT_QUOTES) ?>', this)" class="text-xs bg-slate-800 text-white px-2 py-0.5 rounded hover:bg-slate-700 whitespace-nowrap">Copy</button>
+                                    </div>
+                                </div>
+                                <div>
+                                    <span class="text-[11px] font-bold uppercase text-gray-400 block">Tujuan Akhir (Folder Foto):</span>
+                                    <a href="<?= htmlspecialchars($c['folder_foto_path']) ?>" target="_blank" class="text-gray-500 hover:underline font-mono text-xs break-all"><?= htmlspecialchars($c['folder_foto_path']) ?></a>
+                                </div>
+                            </td>
                             <td class="px-6 py-4 whitespace-nowrap">
-                                <a href="<?= '../' . $c['qr_code_path'] ?>" target="_blank" class="text-blue-600 hover:underline">Lihat QR</a>
+                                <a href="<?= '../' . $c['qr_code_path'] ?>" target="_blank" class="text-blue-600 hover:underline font-medium">Lihat QR</a>
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap">
                                 <a href="edit.php?id=<?= $c['id'] ?>" class="text-indigo-600 hover:underline mr-3">Edit</a>
@@ -160,5 +189,28 @@ $clients = $pdo->query("SELECT * FROM clients ORDER BY created_at DESC")->fetchA
             </div>
         </div>
     </div>
+
+    <script>
+        function updatePreviewLink() {
+            const namaInput = document.getElementById('input_nama').value;
+            const tanggalInput = document.getElementById('input_tanggal').value;
+            const year = tanggalInput ? tanggalInput.substring(0, 4) : '<?= date('Y') ?>';
+            const cleanName = namaInput ? namaInput.replace(/\s+/g, '') : 'NamaKlien';
+            const previewEl = document.querySelector('#preview_direct_link span');
+            previewEl.textContent = `https://files.yuhu.co.id/${year}/${cleanName}`;
+        }
+
+        function copyText(text, btn) {
+            navigator.clipboard.writeText(text).then(() => {
+                const orig = btn.innerText;
+                btn.innerText = 'Copied!';
+                btn.classList.replace('bg-slate-800', 'bg-green-600');
+                setTimeout(() => {
+                    btn.innerText = orig;
+                    btn.classList.replace('bg-green-600', 'bg-slate-800');
+                }, 1500);
+            });
+        }
+    </script>
 </body>
 </html>

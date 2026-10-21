@@ -1,0 +1,8 @@
+RewriteEngine On
+
+# Abaikan jika file atau folder fisik benar-benar ada (seperti /admin, /operator, /uploads)
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+
+# Tangkap pola URL: /TAHUN/NAMA_LINK (contoh: /2026/Fathya&Fadhil(Wedding))
+RewriteRule ^([0-9]{4})/(.+)$ redirect.php?year=$1&slug=$2 [L,QSA,B]

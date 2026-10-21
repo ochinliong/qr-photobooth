@@ -82,7 +82,11 @@ foreach ($all_clients as $client) {
             
             <div id="event-list" class="space-y-4">
                 <?php if (count($active_clients) > 0): ?>
-                    <?php foreach($active_clients as $c): ?>
+                    <?php foreach($active_clients as $c): 
+                        $year_c = date('Y', strtotime($c['tanggal_event']));
+                        $clean_name_c = preg_replace('/\s+/', '', $c['nama_client']);
+                        $direct_url_c = rtrim($base_url, '/') . '/' . $year_c . '/' . $clean_name_c;
+                    ?>
                         <div class="block relative p-5 bg-gray-50 border border-gray-100 rounded-xl hover:bg-blue-50/50 transition-all duration-300 shadow-sm">
                             <div class="flex flex-col flex-grow">
                                 <div class="flex justify-between items-start mb-1">
@@ -115,12 +119,12 @@ foreach ($all_clients as $client) {
                                 <!-- Tombol Aksi Klien -->
                                 <div class="flex gap-2">
                                     <!-- Tombol Buka Galeri -->
-                                    <a href="<?= htmlspecialchars($c['folder_foto_path']) ?>" target="_blank" class="flex-1 flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 rounded-lg transition-colors shadow-sm">
+                                    <a href="<?= htmlspecialchars($direct_url_c) ?>" target="_blank" class="flex-1 flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 rounded-lg transition-colors shadow-sm">
                                         <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
                                         Buka Galeri
                                     </a>
                                     <!-- Tombol Copy Link -->
-                                    <button onclick="copyToClipboard('<?= htmlspecialchars($c['folder_foto_path']) ?>', this);" class="flex-1 flex items-center justify-center bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-2.5 rounded-lg transition-colors border border-slate-200 shadow-sm">
+                                    <button onclick="copyToClipboard('<?= htmlspecialchars($direct_url_c, ENT_QUOTES) ?>', this);" class="flex-1 flex items-center justify-center bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-2.5 rounded-lg transition-colors border border-slate-200 shadow-sm">
                                         <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg>
                                         <span>Copy Link</span>
                                     </button>

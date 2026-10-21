@@ -28,23 +28,26 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $jam_mulai = $_POST['jam_mulai'];
     $jam_selesai = $_POST['jam_selesai'];
 
-    // Check if link changed to regenerate QR Code
-    if ($link_galeri !== $client['folder_foto_path']) {
-        $qr_api = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' . urlencode($link_galeri);
-        $qr_filepath = '../' . $client['qr_code_path'];
-        
-        if (function_exists('curl_init')) {
-            $ch = curl_init($qr_api);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-            $img = curl_exec($ch);
-            @file_put_contents($qr_filepath, $img);
-            curl_close($ch);
-        } else {
-            $qr_content = @file_get_contents($qr_api);
-            if ($qr_content !== false) {
-                @file_put_contents($qr_filepath, $qr_content);
-            }
+    // Buat Direct Link Otomatis sesuai Tahun & Nama Klien (tanpa spasi)
+    $tahun_event = date('Y', strtotime($tanggal_event));
+    $nama_clean = preg_replace('/\s+/', '', $nama_client);
+    $custom_direct_link = rtrim($base_url, '/') . '/' . $tahun_event . '/' . $nama_clean;
+
+    // Selalu pastikan QR Code mengarah ke Custom Direct Link terbaru
+    $qr_api = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' . urlencode($custom_direct_link);
+    $qr_filepath = '../' . $client['qr_code_path'];
+    
+    if (function_exists('curl_init')) {
+        $ch = curl_init($qr_api);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        $img = curl_exec($ch);
+        @file_put_contents($qr_filepath, $img);
+        curl_close($ch);
+    } else {
+        $qr_content = @file_get_contents($qr_api);
+        if ($qr_content !== false) {
+            @file_put_contents($qr_filepath, $qr_content);
         }
     }
 
@@ -54,6 +57,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     header("Location: index.php");
     exit;
 }
+
+$init_year = date('Y', strtotime($client['tanggal_event']));
+$init_clean_name = preg_replace('/\s+/', '', $client['nama_client']);
+$init_direct_link = rtrim($base_url, '/') . '/' . $init_year . '/' . $init_clean_name;
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -69,21 +76,24 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         <form method="POST" action="" class="space-y-4">
             <div>
                 <label class="block text-sm font-medium text-gray-700">Nama Klien</label>
-                <input type="text" name="nama_client" value="<?= htmlspecialchars($client['nama_client']) ?>" required class="mt-1 w-full px-3 py-2 border rounded-md focus:border-blue-500 focus:outline-none">
+                <input type="text" name="nama_client" id="input_nama" value="<?= htmlspecialchars($client['nama_client']) ?>" required class="mt-1 w-full px-3 py-2 border rounded-md focus:border-blue-500 focus:outline-none" oninput="updatePreviewLink()">
             </div>
             <div>
                 <label class="block text-sm font-medium text-gray-700">Lokasi Acara</label>
                 <textarea name="lokasi" required class="mt-1 w-full px-3 py-2 border rounded-md focus:border-blue-500 focus:outline-none" rows="2"><?= htmlspecialchars($client['lokasi'] ?? '') ?></textarea>
             </div>
             <div>
-                <label class="block text-sm font-medium text-gray-700">Link Galeri (Tujuan QR)</label>
+                <label class="block text-sm font-medium text-gray-700">Link Galeri (Tujuan Akhir / Folder Foto)</label>
                 <input type="url" name="folder_foto_path" value="<?= htmlspecialchars($client['folder_foto_path']) ?>" required class="mt-1 w-full px-3 py-2 border rounded-md focus:border-blue-500 focus:outline-none">
-                <p class="text-xs text-orange-600 mt-1">Jika Anda mengubah URL ini, gambar QR Code lama akan otomatis tertimpa (di-generate ulang) dengan link yang baru.</p>
+                <p class="text-xs text-blue-600 mt-1.5 font-medium" id="preview_direct_link">
+                    🔗 Link QR Otomatis: <span class="underline font-mono"><?= htmlspecialchars($init_direct_link) ?></span>
+                </p>
+                <p class="text-xs text-orange-600 mt-1">Saat disimpan, QR Code akan otomatis diperbarui mengikuti Link QR Otomatis di atas.</p>
             </div>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                     <label class="block text-sm font-medium text-gray-700">Tanggal Event</label>
-                    <input type="date" name="tanggal_event" value="<?= $client['tanggal_event'] ?>" required class="mt-1 w-full px-3 py-2 border rounded-md focus:border-blue-500 focus:outline-none">
+                    <input type="date" name="tanggal_event" id="input_tanggal" value="<?= $client['tanggal_event'] ?>" required class="mt-1 w-full px-3 py-2 border rounded-md focus:border-blue-500 focus:outline-none" onchange="updatePreviewLink()">
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700">Jam Mulai</label>
@@ -100,5 +110,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             </div>
         </form>
     </div>
+    <script>
+        function updatePreviewLink() {
+            const namaInput = document.getElementById('input_nama').value;
+            const tanggalInput = document.getElementById('input_tanggal').value;
+            const year = tanggalInput ? tanggalInput.substring(0, 4) : '<?= date('Y') ?>';
+            const cleanName = namaInput ? namaInput.replace(/\s+/g, '') : 'NamaKlien';
+            const previewEl = document.querySelector('#preview_direct_link span');
+            previewEl.textContent = `https://files.yuhu.co.id/${year}/${cleanName}`;
+        }
+    </script>
 </body>
 </html>

@@ -172,7 +172,11 @@ function formatTanggalIndo($dateStr) {
                     
                     <!-- List Event di Tanggal Tersebut -->
                     <div class="divide-y divide-slate-100">
-                        <?php foreach($clients as $c): ?>
+                        <?php foreach($clients as $c): 
+                            $year_c = date('Y', strtotime($c['tanggal_event']));
+                            $clean_name_c = preg_replace('/\s+/', '', $c['nama_client']);
+                            $direct_url_c = rtrim($base_url, '/') . '/' . $year_c . '/' . $clean_name_c;
+                        ?>
                             <div class="p-5 hover:bg-slate-50 transition-colors">
                                 <div class="flex justify-between items-start mb-2">
                                     <h3 class="font-bold text-slate-900 text-lg leading-tight pr-3"><?= htmlspecialchars($c['nama_client']) ?></h3>
@@ -181,20 +185,24 @@ function formatTanggalIndo($dateStr) {
                                     </span>
                                 </div>
                                 
-                                <div class="flex items-start text-xs text-slate-500 mb-4 mt-1">
+                                <div class="flex items-start text-xs text-slate-500 mb-3 mt-1">
                                     <svg class="w-3.5 h-3.5 mr-1.5 flex-shrink-0 text-red-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.242-4.243a8 8 0 1111.314 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
                                     <div class="leading-relaxed">
                                         <?= nl2br(htmlspecialchars($c['lokasi'] ?? '-')) ?>
                                     </div>
                                 </div>
+
+                                <div class="bg-blue-50/60 border border-blue-100 rounded-lg px-3 py-2 mb-4 text-xs text-blue-700 font-mono break-all">
+                                    <?= htmlspecialchars($direct_url_c) ?>
+                                </div>
                                 
                                 <!-- Action Buttons -->
                                 <div class="flex gap-2">
-                                    <a href="<?= htmlspecialchars($c['folder_foto_path']) ?>" target="_blank" class="flex-1 flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 rounded-lg transition-colors shadow-sm">
+                                    <a href="<?= htmlspecialchars($direct_url_c) ?>" target="_blank" class="flex-1 flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 rounded-lg transition-colors shadow-sm">
                                         <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
                                         Buka Galeri
                                     </a>
-                                    <button onclick="copyToClipboard('<?= htmlspecialchars($c['folder_foto_path']) ?>', this);" class="flex-1 flex items-center justify-center bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-2.5 rounded-lg transition-colors border border-slate-200 shadow-sm">
+                                    <button onclick="copyToClipboard('<?= htmlspecialchars($direct_url_c, ENT_QUOTES) ?>', this);" class="flex-1 flex items-center justify-center bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-2.5 rounded-lg transition-colors border border-slate-200 shadow-sm">
                                         <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg>
                                         <span>Copy Link</span>
                                     </button>
