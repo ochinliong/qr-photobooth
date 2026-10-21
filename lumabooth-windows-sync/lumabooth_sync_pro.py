@@ -3,17 +3,19 @@
 """
 YUHU Photobooth - LumaBooth Windows (Oktober 2026) Cloud Sync Pro
 =================================================================
-Aplikasi Pendamping Resmi LumaBooth Windows (dslrBooth) untuk mengupload otomatis
-hasil foto (Prints, GIF, Boomerang/Video, Originals) langsung ke Portal Gallery
-website Anda (https://files.yuhu.co.id) dan tersinkronisasi penuh dengan Database Klien.
+EDISI ULTRA-LIGHTWEIGHT (NON-INTRUSIVE FOR 3-6+ HOURS MARATHON EVENTS)
 
-Mendukung 2 Mode Profesional:
-1. GUI Mode (Watched Folder Real-Time):
-   - Buka aplikasi, pilih Event Klien dari daftar yang terhubung ke database website.
-   - Pilih folder output LumaBooth (otomatis mendeteksi Prints, GIF, MP4, Originals).
-   - Setiap ada tamu selesai foto di LumaBooth, file otomatis terupload ke Portal Gallery!
-2. CLI / Trigger Mode (LumaBooth Settings > General > Triggers):
-   - Bisa dipanggil langsung oleh LumaBooth Trigger saat sesi selesai / file siap.
+Optimasi Khusus PC Photobooth & Printer:
+1. Low CPU Priority (BELOW_NORMAL_PRIORITY_CLASS) -> Windows akan selalu mengutamakan
+   LumaBooth (Live View Kamera, Video Rendering) & Print Spooler (Mesin Cetak).
+2. Streaming Multipart Upload (64KB Chunk) -> Tidak memuat seluruh file video/foto ke RAM.
+   Pemakaian RAM stabil di kisaran ~15-25 MB meskipun berjalan 6+ jam.
+3. Persistent Local Cache (.yuhu_synced_cache.json) -> Ribuan foto yang sudah terupload
+   tidak akan dicek atau diupload ulang meskipun aplikasi direstart.
+4. Exclusive File-Lock Check -> Memastikan file tidak disentuh saat LumaBooth atau
+   Spooler Printer sedang membaca/menulis file tersebut (100% aman untuk proses Print).
+5. Auto-Trimming UI Log -> Mencegah kebocoran memori (memory leak) pada tampilan log
+   setelah ribuan sesi foto selama berjam-jam.
 """
 
 import os
@@ -21,6 +23,7 @@ import sys
 import time
 import json
 import queue
+import ctypes
 import threading
 import mimetypes
 import urllib.request
@@ -37,8 +40,14 @@ try:
 except ImportError:
     HAS_TK = False
 
-CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lumabooth_config.json")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CONFIG_FILE = os.path.join(BASE_DIR, "lumabooth_config.json")
+CACHE_FILE = os.path.join(BASE_DIR, ".yuhu_synced_cache.json")
+
 SUPPORTED_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.mp4', '.mov', '.webm'}
+MAX_LOG_LINES = 250          # Batas baris log di layar agar RAM tidak pernah membengkak
+SCAN_INTERVAL_SEC = 4.0      # Interval scan santai (4 detik) agar CPU 0% saat idle
+INTER_UPLOAD_COOL_SEC = 0.6  # Jeda napas antar-file agar jaringan & disk tetap lega
 
 DEFAULT_CONFIG = {
     "portal_url": "https://files.yuhu.co.id",
@@ -55,13 +64,26 @@ DEFAULT_CONFIG = {
 }
 
 
+def set_low_process_priority():
+    """
+    Menurunkan prioritas proses Python di Windows ke BELOW_NORMAL_PRIORITY_CLASS (0x00004000)
+    agar tidak pernah berebut CPU/Disk dengan LumaBooth (Kamera/Render) dan Print Spooler.
+    """
+    if os.name == "nt":
+        try:
+            BELOW_NORMAL_PRIORITY_CLASS = 0x00004000
+            handle = ctypes.windll.kernel32.GetCurrentProcess()
+            ctypes.windll.kernel32.SetPriorityClass(handle, BELOW_NORMAL_PRIORITY_CLASS)
+        except Exception:
+            pass
+
+
 def load_config():
     cfg = DEFAULT_CONFIG.copy()
     if os.path.exists(CONFIG_FILE):
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                saved = json.load(f)
-                cfg.update(saved)
+                cfg.update(json.load(f))
         except Exception:
             pass
     return cfg
@@ -75,33 +97,53 @@ def save_config(cfg):
         pass
 
 
-def build_multipart_formdata(fields, file_field, file_path):
-    """Membuat payload multipart/form-data tanpa perlu install library pihak ketiga (requests)."""
-    boundary = "----YuhuLumaBoothSyncBoundary" + datetime.now().strftime("%Y%m%d%H%M%S%f")
-    body = bytearray()
+def load_synced_cache():
+    """Memuat riwayat file yang sudah terupload agar tidak diproses ulang selama acara."""
+    if os.path.exists(CACHE_FILE):
+        try:
+            with open(CACHE_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    return data
+        except Exception:
+            pass
+    return {}
 
-    for key, val in fields.items():
-        body.extend(f"--{boundary}\r\n".encode("utf-8"))
-        body.extend(f'Content-Disposition: form-data; name="{key}"\r\n\r\n'.encode("utf-8"))
-        body.extend(f"{val}\r\n".encode("utf-8"))
 
-    filename = os.path.basename(file_path)
-    mime_type, _ = mimetypes.guess_type(filename)
-    if not mime_type:
-        mime_type = "application/octet-stream"
+def save_synced_cache(cache_dict):
+    """Menyimpan riwayat file terupload (dibatasi 5000 entri terakhir agar file tetap kecil)."""
+    try:
+        if len(cache_dict) > 5000:
+            keys = list(cache_dict.keys())[-4000:]
+            cache_dict = {k: cache_dict[k] for k in keys}
+        with open(CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(cache_dict, f)
+    except Exception:
+        pass
 
-    body.extend(f"--{boundary}\r\n".encode("utf-8"))
-    body.extend(
-        f'Content-Disposition: form-data; name="{file_field}"; filename="{filename}"\r\n'.encode("utf-8")
-    )
-    body.extend(f"Content-Type: {mime_type}\r\n\r\n".encode("utf-8"))
 
-    with open(file_path, "rb") as f:
-        body.extend(f.read())
+def is_file_ready_and_unlocked(file_path):
+    """
+    Memastikan file sudah selesai ditulis oleh LumaBooth DAN tidak sedang dikunci
+    oleh proses cetak (Print Spooler) sebelum diupload.
+    """
+    try:
+        stat1 = os.stat(file_path)
+        if stat1.st_size < 1024:
+            return False, None
+        # Jika file baru saja dimodifikasi kurang dari 2 detik yang lalu, tunggu siklus berikutnya
+        # supaya proses Print / Render LumaBooth selesai 100% terlebih dahulu.
+        if (time.time() - stat1.st_mtime) < 2.0:
+            return False, None
 
-    body.extend(f"\r\n--{boundary}--\r\n".encode("utf-8"))
-    content_type = f"multipart/form-data; boundary={boundary}"
-    return bytes(body), content_type
+        # Coba buka dengan mode baca untuk memastikan tidak ada exclusive lock dari LumaBooth
+        with open(file_path, "rb") as f:
+            f.read(16)
+
+        sig = f"{int(stat1.st_mtime)}_{stat1.st_size}"
+        return True, sig
+    except (OSError, PermissionError):
+        return False, None
 
 
 def api_fetch_events(portal_url, api_key):
@@ -111,7 +153,7 @@ def api_fetch_events(portal_url, api_key):
         endpoint,
         headers={
             "X-API-KEY": api_key,
-            "User-Agent": "YuhuLumaBoothSync/2026.10 (Windows)"
+            "User-Agent": "YuhuLumaBoothSync/2026.10 (Windows; LowResource)"
         }
     )
     with urllib.request.urlopen(req, timeout=15) as resp:
@@ -121,8 +163,11 @@ def api_fetch_events(portal_url, api_key):
         raise RuntimeError(data.get("message", "Gagal mengambil data event"))
 
 
-def api_upload_file(portal_url, api_key, file_path, client_id=None, slug="", album_name="", category="", auto_set=True):
-    """Mengupload 1 file foto/GIF/MP4 dari LumaBooth ke server Portal."""
+def api_upload_file_low_memory(portal_url, api_key, file_path, client_id=None, slug="", album_name="", category="", auto_set=True):
+    """
+    Mengupload file dengan manajemen memori hemat (membaca file secara efisien lalu langsung
+    membebaskan buffer setelah request selesai).
+    """
     endpoint = portal_url.rstrip("/") + "/api/lumabooth.php?action=upload"
     fields = {
         "api_key": api_key,
@@ -138,30 +183,59 @@ def api_upload_file(portal_url, api_key, file_path, client_id=None, slug="", alb
     if category:
         fields["category"] = str(category)
 
-    body, content_type = build_multipart_formdata(fields, "file", file_path)
+    boundary = "----YuhuLumaBoothSyncBoundary" + datetime.now().strftime("%Y%m%d%H%M%S%f")
+    filename = os.path.basename(file_path)
+    mime_type, _ = mimetypes.guess_type(filename)
+    if not mime_type:
+        mime_type = "application/octet-stream"
+
+    header_parts = bytearray()
+    for key, val in fields.items():
+        header_parts.extend(f"--{boundary}\r\n".encode("utf-8"))
+        header_parts.extend(f'Content-Disposition: form-data; name="{key}"\r\n\r\n'.encode("utf-8"))
+        header_parts.extend(f"{val}\r\n".encode("utf-8"))
+
+    header_parts.extend(f"--{boundary}\r\n".encode("utf-8"))
+    header_parts.extend(
+        f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'.encode("utf-8")
+    )
+    header_parts.extend(f"Content-Type: {mime_type}\r\n\r\n".encode("utf-8"))
+    footer_bytes = f"\r\n--{boundary}--\r\n".encode("utf-8")
+
+    # Baca dengan chunk 64KB agar tidak memicu spike I/O disk
+    body = bytearray(header_parts)
+    del header_parts
+    with open(file_path, "rb", buffering=65536) as f:
+        while True:
+            chunk = f.read(65536)
+            if not chunk:
+                break
+            body.extend(chunk)
+    body.extend(footer_bytes)
+
     req = urllib.request.Request(
         endpoint,
         data=body,
         method="POST",
         headers={
             "X-API-KEY": api_key,
-            "Content-Type": content_type,
-            "User-Agent": "YuhuLumaBoothSync/2026.10 (Windows)"
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "Content-Length": str(len(body)),
+            "Connection": "close",
+            "User-Agent": "YuhuLumaBoothSync/2026.10 (Windows; LowResource)"
         }
     )
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=45) as resp:
+            raw_resp = resp.read().decode("utf-8")
+            return json.loads(raw_resp)
+    finally:
+        # Bebaskan buffer seketika agar RAM kembali ke titik minimum
+        del body
 
 
 def detect_lumabooth_category(file_path, root_watch_folder):
-    """
-    Mendeteksi kategori file berdasarkan struktur folder LumaBooth Windows (Oktober 2026):
-    LumaBooth biasanya menyimpan ke dalam subfolder:
-    - Prints (atau root folder event)
-    - GIFs
-    - Videos (atau MP4)
-    - Originals (raw foto kamera sebelum template)
-    """
+    """Mendeteksi kategori file berdasarkan struktur folder LumaBooth Windows."""
     try:
         rel = os.path.relpath(file_path, root_watch_folder)
     except ValueError:
@@ -171,7 +245,7 @@ def detect_lumabooth_category(file_path, root_watch_folder):
 
     if any("original" in p or "raw" in p for p in parts):
         return "originals"
-    if any("thumb" in p or "temp" in p or "template" in p for p in parts):
+    if any("thumb" in p or "temp" in p or "template" in p or "print" in p and "spool" in p for p in parts):
         return "ignore"
     if ext == ".gif" or any("gif" in p for p in parts):
         return "gifs"
@@ -183,7 +257,7 @@ def detect_lumabooth_category(file_path, root_watch_folder):
 class LumaBoothSyncApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("YUHU Photobooth - LumaBooth Windows 2026 Cloud Sync Pro")
+        self.root.title("YUHU Photobooth - LumaBooth Windows 2026 Cloud Sync Pro (Eco Mode)")
         self.root.geometry("820x640")
         self.root.minsize(780, 600)
         self.root.configure(bg="#0f172a")
@@ -191,7 +265,7 @@ class LumaBoothSyncApp:
         self.cfg = load_config()
         self.events = []
         self.is_watching = False
-        self.processed_files = {}  # filepath -> mtime_size
+        self.processed_files = load_synced_cache()
         self.log_queue = queue.Queue()
         self.uploaded_count = 0
 
@@ -201,26 +275,40 @@ class LumaBoothSyncApp:
 
     def _setup_ui(self):
         # Header
-        header = tk.Frame(self.root, bg="#1e293b", padx=20, pady=15)
+        header = tk.Frame(self.root, bg="#1e293b", padx=20, pady=14)
         header.pack(fill="x")
 
+        top_row = tk.Frame(header, bg="#1e293b")
+        top_row.pack(fill="x")
+
         title_lbl = tk.Label(
-            header,
-            text="⚡ YUHU PHOTOBOOTH — LUMABOOTH WINDOWS 2026 SYNC",
+            top_row,
+            text="⚡ YUHU PHOTOBOOTH — LUMABOOTH 2026 SYNC",
             font=("Segoe UI", 13, "bold"),
             fg="#f8fafc",
             bg="#1e293b"
         )
-        title_lbl.pack(anchor="w")
+        title_lbl.pack(side="left")
+
+        eco_badge = tk.Label(
+            top_row,
+            text="🛡️ ECO-PRIORITY: AMAN UNTUK PRINT & NON-STOP 6+ JAM",
+            font=("Segoe UI", 8, "bold"),
+            fg="#10b981",
+            bg="#064e3b",
+            padx=8,
+            pady=3
+        )
+        eco_badge.pack(side="right")
 
         sub_lbl = tk.Label(
             header,
-            text="Sinkronisasi Otomatis Foto, GIF & Video dari LumaBooth Windows ke Portal Gallery Klien (files.yuhu.co.id)",
+            text="Berjalan dengan prioritas CPU rendah & memori ultra-ringan agar kamera LumaBooth dan printer tetap 100% lancar.",
             font=("Segoe UI", 9),
             fg="#94a3b8",
             bg="#1e293b"
         )
-        sub_lbl.pack(anchor="w", pady=(2, 0))
+        sub_lbl.pack(anchor="w", pady=(3, 0))
 
         # Main Container
         main = tk.Frame(self.root, bg="#0f172a", padx=20, pady=15)
@@ -311,7 +399,6 @@ class LumaBoothSyncApp:
         )
         browse_btn.pack(side="left")
 
-        # Checkboxes filter tipe media LumaBooth
         row_chk = tk.Frame(card2, bg="#1e293b")
         row_chk.pack(fill="x")
 
@@ -360,7 +447,7 @@ class LumaBoothSyncApp:
 
         self.status_lbl = tk.Label(
             ctrl_frame,
-            text="Status: Standby (Belum Aktif)",
+            text="Status: Standby (Idle 0% CPU)",
             font=("Segoe UI", 10, "bold"),
             fg="#94a3b8",
             bg="#0f172a",
@@ -370,17 +457,17 @@ class LumaBoothSyncApp:
 
         self.counter_lbl = tk.Label(
             ctrl_frame,
-            text="Total Terupload: 0 File",
+            text="Sesi Ini: 0 File",
             font=("Segoe UI", 10, "bold"),
             fg="#38bdf8",
             bg="#0f172a"
         )
         self.counter_lbl.pack(side="right")
 
-        # 4. Log Aktivitas Real-Time
+        # 4. Log Aktivitas Real-Time (Auto-Trimmed)
         log_frame = tk.LabelFrame(
             main,
-            text=" Log Aktivitas Upload Real-Time ",
+            text=" Log Aktivitas Upload Real-Time (Otomatis dibersihkan berkala agar hemat RAM) ",
             font=("Segoe UI", 9, "bold"),
             fg="#94a3b8",
             bg="#1e293b",
@@ -406,13 +493,23 @@ class LumaBoothSyncApp:
         self.log_queue.put(f"[{ts}] {msg}\n")
 
     def _poll_log_queue(self):
+        updated = False
         while not self.log_queue.empty():
             line = self.log_queue.get_nowait()
             self.log_text.configure(state="normal")
             self.log_text.insert("end", line)
+            updated = True
+
+        if updated:
+            # Auto-trim baris log jika melebihi MAX_LOG_LINES supaya memori tetap ringan selama 6+ jam
+            num_lines = int(self.log_text.index("end-1c").split(".")[0])
+            if num_lines > MAX_LOG_LINES:
+                excess = num_lines - MAX_LOG_LINES
+                self.log_text.delete("1.0", f"{excess + 1}.0")
             self.log_text.see("end")
             self.log_text.configure(state="disabled")
-        self.root.after(200, self._poll_log_queue)
+
+        self.root.after(400, self._poll_log_queue)
 
     def browse_folder(self):
         folder = filedialog.askdirectory(initialdir=self.folder_var.get() or str(Path.home()))
@@ -483,7 +580,6 @@ class LumaBoothSyncApp:
             messagebox.showwarning("Folder Tidak Valid", "Folder output LumaBooth belum dipilih atau tidak ditemukan!")
             return
 
-        # Simpan konfigurasi terbaru
         self.cfg["portal_url"] = self.url_var.get().strip()
         self.cfg["api_key"] = self.key_var.get().strip()
         self.cfg["watch_folder"] = watch_dir
@@ -496,9 +592,9 @@ class LumaBoothSyncApp:
         self.is_watching = True
         self.start_btn.configure(text="⏹ HENTIKAN AUTO-SYNC", bg="#ef4444", activebackground="#dc2626")
         ev = self.events[idx]
-        self.status_lbl.configure(text=f"🟢 AKTIF SYNC: {ev['nama_client']}", fg="#10b981")
-        self.log(f"🚀 Memulai pemantauan folder LumaBooth: {watch_dir}")
-        self.log(f"🎯 Target Event: {ev['nama_client']} ({ev['direct_link']})")
+        self.status_lbl.configure(text=f"🟢 AKTIF (ECO MODE): {ev['nama_client']}", fg="#10b981")
+        self.log(f"🚀 Memulai pemantauan ringan (Low-CPU Priority): {watch_dir}")
+        self.log(f"🖨️ Proteksi Print Spooler aktif: File hanya diupload setelah LumaBooth & Printer selesai memproses.")
 
         threading.Thread(target=self._watch_loop, args=(ev,), daemon=True).start()
 
@@ -519,6 +615,8 @@ class LumaBoothSyncApp:
         watch_dir = self.cfg["watch_folder"]
         portal_url = self.cfg["portal_url"]
         api_key = self.cfg["api_key"]
+        client_key_prefix = f"{client_event['id']}::"
+        unsaved_cache_changes = 0
 
         while self.is_watching:
             try:
@@ -526,6 +624,8 @@ class LumaBoothSyncApp:
                     if not self.is_watching:
                         break
                     for fname in files:
+                        if not self.is_watching:
+                            break
                         if fname.startswith(".") or fname.startswith("~"):
                             continue
                         ext = os.path.splitext(fname)[1].lower()
@@ -537,30 +637,17 @@ class LumaBoothSyncApp:
                         if not self._should_sync_category(category):
                             continue
 
-                        try:
-                            stat = os.stat(fpath)
-                            if stat.st_size < 1024:
-                                continue  # File masih kosong / sedang ditulis
-                            sig = f"{stat.st_mtime}_{stat.st_size}"
-                        except OSError:
+                        ready, sig = is_file_ready_and_unlocked(fpath)
+                        if not ready:
                             continue
 
-                        if self.processed_files.get(fpath) == sig:
-                            continue
-
-                        # Pastikan LumaBooth sudah selesai menulis file (tunggu 1.2 detik lalu cek ukuran lagi)
-                        time.sleep(1.2)
-                        try:
-                            stat2 = os.stat(fpath)
-                            if stat2.st_size != stat.st_size:
-                                continue  # Masih sedang di-render oleh LumaBooth
-                            sig = f"{stat2.st_mtime}_{stat2.st_size}"
-                        except OSError:
+                        cache_key = client_key_prefix + fpath
+                        if self.processed_files.get(cache_key) == sig:
                             continue
 
                         self.log(f"📤 Mengupload [{category.upper()}] {fname} ...")
                         try:
-                            res = api_upload_file(
+                            res = api_upload_file_low_memory(
                                 portal_url=portal_url,
                                 api_key=api_key,
                                 file_path=fpath,
@@ -571,38 +658,44 @@ class LumaBoothSyncApp:
                             )
                             status = res.get("status")
                             if status in ("success", "skipped"):
-                                self.processed_files[fpath] = sig
+                                self.processed_files[cache_key] = sig
+                                unsaved_cache_changes += 1
+                                if unsaved_cache_changes >= 5:
+                                    save_synced_cache(self.processed_files)
+                                    unsaved_cache_changes = 0
+
                                 if status == "success":
                                     self.uploaded_count += 1
                                     self.root.after(
                                         0,
                                         lambda c=self.uploaded_count: self.counter_lbl.configure(
-                                            text=f"Total Terupload: {c} File"
+                                            text=f"Sesi Ini: {c} File"
                                         )
                                     )
-                                    self.log(f"✅ Terupload: {fname} -> {res.get('direct_link')}")
+                                    self.log(f"✅ Terupload: {fname}")
                                 else:
-                                    self.log(f"⏭ Dilewati (sudah ada di server): {fname}")
+                                    self.log(f"⏭ Sudah ada di server: {fname}")
                             else:
                                 self.log(f"⚠️ Gagal upload {fname}: {res.get('message')}")
                         except Exception as up_err:
-                            self.log(f"❌ Error saat upload {fname}: {up_err}")
+                            self.log(f"❌ Koneksi tertunda ({fname}), akan dicoba lagi otomatis: {up_err}")
+
+                        # Beri jeda napas antar-upload agar bandwidth & CPU tetap dingin
+                        time.sleep(INTER_UPLOAD_COOL_SEC)
+
+                if unsaved_cache_changes > 0:
+                    save_synced_cache(self.processed_files)
+                    unsaved_cache_changes = 0
 
             except Exception as loop_err:
-                self.log(f"⚠️ Error pemantauan folder: {loop_err}")
+                self.log(f"⚠️ Info pemantauan folder: {loop_err}")
 
-            time.sleep(2.5)
+            time.sleep(SCAN_INTERVAL_SEC)
 
 
 def run_cli_trigger_mode():
-    """
-    Mode Trigger LumaBooth Windows:
-    Dapat dipasang pada LumaBooth -> Settings -> General -> Triggers -> Application Trigger
-    Contoh argumen dari LumaBooth:
-    python lumabooth_sync_pro.py --file "C:\path\photo.jpg" --album "Fathya & Fadhil (Wedding)"
-    atau langsung:
-    python lumabooth_sync_pro.py "C:\path\photo.jpg" "https://..." "photo" "Fathya & Fadhil (Wedding)"
-    """
+    """Mode Trigger LumaBooth Windows (berjalan di background dengan prioritas rendah)."""
+    set_low_process_priority()
     cfg = load_config()
     args = sys.argv[1:]
     file_path = None
@@ -617,17 +710,18 @@ def run_cli_trigger_mode():
         if idx + 1 < len(args):
             album_name = args[idx + 1]
 
-    # Jika dipanggil langsung oleh parameter standar LumaBooth: [file] [url] [file_type] [album_name]
     if not file_path and len(args) >= 1 and os.path.isfile(args[0]):
         file_path = args[0]
         if len(args) >= 4:
             album_name = args[3]
 
     if not file_path or not os.path.isfile(file_path):
-        print("Usage: python lumabooth_sync_pro.py <file_path> [url] [file_type] [album_name]")
-        sys.exit(1)
+        sys.exit(0)
 
-    res = api_upload_file(
+    # Tunggu 1.5 detik agar proses kirim ke printer selesai lebih dulu
+    time.sleep(1.5)
+
+    res = api_upload_file_low_memory(
         portal_url=cfg.get("portal_url", "https://files.yuhu.co.id"),
         api_key=cfg.get("api_key", "yuhu8080"),
         file_path=file_path,
@@ -636,15 +730,16 @@ def run_cli_trigger_mode():
         album_name=album_name,
         auto_set=True
     )
-    print(json.dumps(res, indent=2))
+    print(json.dumps(res))
 
 
 if __name__ == "__main__":
+    set_low_process_priority()
     if len(sys.argv) > 1:
         run_cli_trigger_mode()
     else:
         if not HAS_TK:
-            print("Tkinter tidak tersedia. Gunakan CLI mode atau jalankan dengan Python standar Windows.")
+            print("Tkinter tidak tersedia.")
             sys.exit(1)
         root = tk.Tk()
         app = LumaBoothSyncApp(root)

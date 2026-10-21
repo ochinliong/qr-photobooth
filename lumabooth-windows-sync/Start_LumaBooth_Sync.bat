@@ -1,18 +1,26 @@
 @echo off
-title YUHU Photobooth - LumaBooth Windows 2026 Cloud Sync Pro
 cd /d "%~dp0"
 
-echo =====================================================================
-echo   YUHU PHOTOBOOTH - LUMABOOTH WINDOWS (OKTOBER 2026) CLOUD SYNC PRO
-echo =====================================================================
-echo Memulai aplikasi sinkronisasi LumaBooth ke Portal files.yuhu.co.id...
-echo.
+:: ============================================================================
+:: YUHU PHOTOBOOTH - LUMABOOTH WINDOWS 2026 SYNC LAUNCHER (ECO / LOW PRIORITY)
+:: ============================================================================
+:: - Dijalankan dengan flag /BELOWNORMAL agar Windows 100% mengutamakan
+::   LumaBooth (Kamera, Live View, Render Video) dan Print Spooler (Printer).
+:: - Menggunakan pythonw.exe (Windowless Background Process) sehingga jendela
+::   hitam CMD langsung tertutup otomatis dan tidak memakan resource di taskbar.
+:: ============================================================================
 
-python lumabooth_sync_pro.py
-if %ERRORLEVEL% NEQ 0 (
-    echo.
-    echo [!] Gagal menjalankan Python. Mencoba menggunakan launcher py...
-    py lumabooth_sync_pro.py
+where pythonw >nul 2>nul
+if %ERRORLEVEL% EQU 0 (
+    start "YUHU LumaBooth Sync" /BELOWNORMAL pythonw lumabooth_sync_pro.py
+    exit /b 0
 )
 
-pause
+where pyw >nul 2>nul
+if %ERRORLEVEL% EQU 0 (
+    start "YUHU LumaBooth Sync" /BELOWNORMAL pyw lumabooth_sync_pro.py
+    exit /b 0
+)
+
+start "YUHU LumaBooth Sync" /BELOWNORMAL python lumabooth_sync_pro.py
+exit /b 0
