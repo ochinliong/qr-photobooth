@@ -1,0 +1,44 @@
+========================================================================
+  PANDUAN INSTALASI & PENGGUNAAN DI PC WINDOWS PHOTOBOOTH
+  YUHU PHOTOBOOTH - LUMABOOTH WINDOWS (OKTOBER 2026) CLOUD SYNC PRO
+========================================================================
+
+A. FILE YANG WAJIB ADA DI KOMPUTER PHOTOBOOTH (DALAM 1 FOLDER):
+---------------------------------------------------------------
+1. Start_LumaBooth_Sync.bat  -> Klik 2x file ini untuk menjalankan aplikasi.
+2. lumabooth_sync_pro.py     -> Mesin utama aplikasi (GUI, Auto-Sync, Anti-Gagal).
+
+*(Catatan: File lumabooth_config.json, .yuhu_synced_cache.json, dan
+ .yuhu_pending_queue.json akan otomatis dibuat sendiri oleh aplikasi saat berjalan).*
+
+
+B. PERSIAPAN AWAL DI PC WINDOWS (HANYA SEKALI SAJA):
+----------------------------------------------------
+1. Pastikan Python sudah terinstal di Windows Anda.
+   - Jika belum ada, download gratis di: https://www.python.org/downloads/
+   - PENTING: Saat instal Python, wajib centang kotak:
+     [x] "Add python.exe to PATH" di bagian paling bawah sebelum klik Install Now.
+   - Tidak perlu menginstal library tambahan apa pun (100% menggunakan bawaan Windows/Python).
+
+2. Taruh folder `lumabooth-windows-sync` ini di lokasi permanen di PC Photobooth Anda,
+   misalnya di:
+   `C:\YuhuPhotobooth\lumabooth-windows-sync\`
+
+
+C. CARA PAKAI SAAT ACARA BERLANGSUNG:
+-------------------------------------
+1. Klik 2x file `Start_LumaBooth_Sync.bat`.
+   (Jendela hitam CMD akan otomatis hilang dan memunculkan aplikasi YUHU Sync Pro
+    dengan mode hemat CPU agar LumaBooth & Printer 100% lancar).
+
+2. Klik tombol [🔄 Refresh Event], lalu pilih Nama Klien / Acara hari ini pada daftar dropdown.
+
+3. Klik tombol [📁 Pilih Folder...], lalu arahkan ke folder tempat LumaBooth menyimpan foto acara
+   (Biasanya di: `C:\Users\<NamaPC>\Pictures\LumaBooth\<Nama_Event_LumaBooth>`).
+
+4. Klik tombol [⚡ Pasang Auto-Resume Saat PC Nyala] (cukup sekali saja).
+   Fungsinya: Jika listrik mati / PC restart mendadak di tengah acara, aplikasi akan otomatis
+   menyala sendiri saat Windows hidup dan langsung melanjutkan upload foto!
+
+5. Klik tombol hijau [▶ MULAI AUTO-SYNC LUMABOOTH].
+   Selesai! Biarkan aplikasi berjalan di latar belakang selama acara (aman untuk 3-6+ jam non-stop).
