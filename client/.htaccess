@@ -1,0 +1,8 @@
+RewriteEngine On
+
+# Prioritaskan cek di dalam folder photos/ agar tidak bentrok jika tidak sengaja terbuat folder di luar
+RewriteCond %{REQUEST_URI} ^(.*/)([^/]+)/?$
+RewriteCond %{DOCUMENT_ROOT}%1photos/%2 -d [OR]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^([^/]+)/?$ index.php?client=$1 [B,L,QSA]

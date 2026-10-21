@@ -15,13 +15,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
     $jam_mulai = $_POST['jam_mulai'];
     $jam_selesai = $_POST['jam_selesai'];
     $link_galeri = trim($_POST['folder_foto_path'] ?? '');
+    $folder_event_name = preg_replace('/[^A-Za-z0-9_\-&() ]/', '', str_replace(' ', '_', $nama_client));
     if (empty($link_galeri)) {
-        // Default menggunakan Portal Galeri Internal (LumaBooth Sync)
-        $link_galeri = 'uploads/gallery/' . $slug;
+        // Default menggunakan Portal Galeri Internal (otomatis mengikuti nama Event LumaBooth)
+        $link_galeri = rtrim($base_url, '/') . '/client/?client=' . rawurlencode($folder_event_name);
     }
 
-    // Buat folder galeri lokal untuk sinkronisasi LumaBooth
-    $gallery_folder_path = '../uploads/gallery/' . $slug;
+    // Buat folder galeri lokal di ../client/photos/{EventName} untuk sinkronisasi LumaBooth
+    $gallery_folder_path = '../client/photos/' . $folder_event_name;
     if (!file_exists($gallery_folder_path)) {
         @mkdir($gallery_folder_path, 0777, true);
     }
@@ -92,15 +93,32 @@ function buildDirectLink($c, $base_url) {
     return rtrim($base_url, '/') . '/' . $year . '/' . $clean_name;
 }
 
-// Helper hitung foto lokal di Portal Gallery
-function countLocalPhotos($slug) {
-    $dir = '../uploads/gallery/' . $slug;
-    if (!is_dir($dir)) return 0;
+// Helper hitung foto lokal di Portal Gallery (/client/photos/{NamaEvent})
+function countLocalPhotos($nama_client) {
+    $photos_root = '../client/photos';
+    if (!is_dir($photos_root)) return 0;
+    $clean_target = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $nama_client));
+    $matched_dir = '';
+    foreach (scandir($photos_root) as $d) {
+        if ($d !== '.' && $d !== '..' && is_dir($photos_root . '/' . $d)) {
+            if (strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $d)) === $clean_target && $clean_target !== '') {
+                $matched_dir = $photos_root . '/' . $d;
+                break;
+            }
+        }
+    }
+    if (empty($matched_dir) || !is_dir($matched_dir)) return 0;
     $count = 0;
-    foreach (scandir($dir) as $f) {
-        $ext = strtolower(pathinfo($f, PATHINFO_EXTENSION));
-        if (in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'mov', 'webm'])) {
-            $count++;
+    $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($matched_dir));
+    foreach ($it as $file) {
+        if ($file->isFile()) {
+            $ext = strtolower($file->getExtension());
+            if (in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'mov', 'webm'])) {
+                $rel = strtolower($file->getPathname());
+                if (strpos($rel, 'thumb') === false && strpos($rel, '.part_') === false) {
+                    $count++;
+                }
+            }
         }
     }
     return $count;
@@ -202,8 +220,8 @@ function countLocalPhotos($slug) {
                     <tbody class="divide-y divide-gray-200">
                         <?php foreach($clients as $c): 
                             $direct_link = buildDirectLink($c, $base_url);
-                            $photo_count = countLocalPhotos($c['slug']);
-                            $internal_gallery_url = rtrim($base_url, '/') . '/client/?c=' . urlencode($c['slug']);
+                            $photo_count = countLocalPhotos($c['nama_client']);
+                            $internal_gallery_url = rtrim($base_url, '/') . '/client/?client=' . rawurlencode(str_replace(' ', '_', $c['nama_client']));
                         ?>
                         <tr>
                             <td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900">

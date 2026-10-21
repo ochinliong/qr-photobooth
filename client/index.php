@@ -1,416 +1,373 @@
 <?php
 require_once '../config.php';
 
-$slug = $_GET['c'] ?? '';
-if (empty($slug)) {
+// Dukung parameter ?client= (standar LumaBooth Cloud) maupun ?c= (standar Portal)
+$raw_param = $_GET['client'] ?? ($_GET['c'] ?? '');
+$client_name = trim(str_replace(['..', '/', '\\', "\0"], '', $raw_param));
+
+if (empty($client_name)) {
     header("Location: ../");
     exit;
 }
 
-// Cari berdasarkan slug atau nama tanpa spasi
-$stmt = $pdo->prepare("SELECT * FROM clients WHERE slug = ?");
-$stmt->execute([$slug]);
-$client = $stmt->fetch(PDO::FETCH_ASSOC);
-
-if (!$client) {
-    $clean_q = strtolower(preg_replace('/\s+/', '', $slug));
-    $stmt_all = $pdo->query("SELECT * FROM clients ORDER BY id DESC");
-    foreach ($stmt_all->fetchAll(PDO::FETCH_ASSOC) as $row) {
-        if (strtolower(preg_replace('/\s+/', '', $row['nama_client'])) === $clean_q) {
-            $client = $row;
+// Cari kecocokan dengan Database Portal (clients) untuk mengambil judul/lokasi/jadwal resmi jika ada
+$db_client = null;
+$req_clean = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $client_name));
+try {
+    $stmt = $pdo->query("SELECT * FROM clients ORDER BY id DESC");
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $c_name = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $row['nama_client']));
+        $c_slug = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $row['slug']));
+        if ($req_clean !== '' && ($c_name === $req_clean || $c_slug === $req_clean)) {
+            $db_client = $row;
             break;
         }
     }
+} catch (Exception $e) {}
+
+// Pencarian cerdas (Fuzzy Matching) pada direktori photos/
+$photos_root = __DIR__ . '/photos';
+if (!is_dir($photos_root)) {
+    @mkdir($photos_root, 0777, true);
 }
 
-if (!$client) {
-    die("Data acara tidak ditemukan.");
-}
-
-// Cek folder galeri: utama di ../uploads/gallery/{slug}, fallback ke folder_foto_path jika path relatif
-$gallery_rel = 'uploads/gallery/' . $client['slug'];
-$folder_path = '../' . $gallery_rel;
-
-if (!is_dir($folder_path)) {
-    $custom_rel = ltrim($client['folder_foto_path'] ?? '', '/');
-    if (!empty($custom_rel) && !preg_match('#^https?://#i', $custom_rel) && is_dir('../' . $custom_rel)) {
-        $gallery_rel = $custom_rel;
-        $folder_path = '../' . $custom_rel;
+$resolved_folder = $client_name;
+if (!is_dir($photos_root . '/' . $resolved_folder)) {
+    // Coba cocokkan dengan nama_client dari DB jika tadi dipanggil pakai slug
+    $search_candidates = [$req_clean];
+    if ($db_client) {
+        $search_candidates[] = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $db_client['nama_client']));
     }
-}
-
-$media_items = [];
-if (is_dir($folder_path)) {
-    $files = scandir($folder_path);
-    foreach ($files as $file) {
-        if ($file === '.' || $file === '..' || strpos($file, '.part_') !== false) continue;
-        $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
-        if (in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'mov', 'webm'])) {
-            $full_file = $folder_path . '/' . $file;
-            $type = 'photo';
-            if (in_array($ext, ['mp4', 'mov', 'webm'])) {
-                $type = 'video';
-            } elseif ($ext === 'gif' || strpos(strtolower($file), 'gifs_') === 0) {
-                $type = 'gif';
+    $dirs = @scandir($photos_root) ?: [];
+    foreach ($dirs as $dir) {
+        if ($dir !== '.' && $dir !== '..' && is_dir($photos_root . '/' . $dir)) {
+            $dir_clean = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $dir));
+            if ($dir_clean !== '' && in_array($dir_clean, $search_candidates, true)) {
+                $resolved_folder = $dir;
+                break;
             }
-            $media_items[] = [
-                'name' => $file,
-                'url'  => '../' . $gallery_rel . '/' . rawurlencode($file),
-                'ext'  => $ext,
-                'type' => $type,
-                'mtime' => @filemtime($full_file) ?: 0,
-                'size' => @filesize($full_file) ?: 0
-            ];
         }
     }
 }
 
-// Urutkan dari yang terbaru diupload (LumaBooth live stream)
-usort($media_items, function($a, $b) {
-    return $b['mtime'] <=> $a['mtime'];
+$target_dir = $photos_root . '/' . $resolved_folder;
+
+// Membaca Judul Custom & Pengaturan Visibility (Jika ada di config.json atau Database)
+$display_title = $db_client ? $db_client['nama_client'] : str_replace('_', ' ', $resolved_folder);
+$display_subtitle = "Terima kasih telah merayakan bersama kami!";
+if ($db_client && !empty($db_client['lokasi'])) {
+    $display_subtitle = str_replace(["\r\n", "\n"], ' • ', $db_client['lokasi']);
+}
+$display_tab_title = "Galeri - " . $display_title;
+$visible_folders = ['Prints', 'Singles', 'Animated', 'Videos'];
+$hidden_files = [];
+
+$config_path = $target_dir . '/config.json';
+if (file_exists($config_path)) {
+    $json = json_decode(file_get_contents($config_path), true);
+    if (!empty($json['title'])) {
+        $display_title = $json['title'];
+        $display_tab_title = "Galeri - " . $display_title;
+    }
+    if (!empty(trim($json['subtitle'] ?? ''))) {
+        $display_subtitle = $json['subtitle'];
+    }
+    if (!empty(trim($json['tab_title'] ?? ''))) {
+        $display_tab_title = trim($json['tab_title']);
+    }
+    if (isset($json['visible_folders']) && is_array($json['visible_folders'])) {
+        $visible_folders = $json['visible_folders'];
+    }
+    if (isset($json['hidden_files']) && is_array($json['hidden_files'])) {
+        $hidden_files = $json['hidden_files'];
+    }
+}
+
+// Membaca file rekursif dari photos/{EventName}/{Prints,Animated,Singles,...}
+$files_data = [];
+if (is_dir($target_dir)) {
+    $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($target_dir));
+    foreach ($iterator as $file) {
+        if ($file->isFile()) {
+            $fname_only = $file->getFilename();
+            if (strpos($fname_only, '.part_') !== false || $fname_only === 'config.json') continue;
+
+            $ext = strtolower($file->getExtension());
+            if (in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'mp4', 'mov', 'webm'])) {
+                $path = str_replace('\\', '/', $file->getPathname());
+                $target_norm = str_replace('\\', '/', $target_dir);
+                $rel_path = ltrim( substr($path, strlen($target_norm)), '/' );
+
+                $parts = explode('/', $rel_path);
+                $parent_folder = count($parts) > 1 ? $parts[0] : '';
+
+                // Aturan khusus dslrBooth / LumaBooth:
+                // 1. Abaikan folder 'thumb', 'settings', dan 'templates'
+                $rel_path_lower = strtolower($rel_path);
+                if (strpos($rel_path_lower, 'thumb') !== false ||
+                    strpos($rel_path_lower, 'settings') !== false ||
+                    strpos($rel_path_lower, 'template') !== false) {
+                    continue;
+                }
+
+                // 2. Di folder Animated, abaikan file JPG thumbnail pendamping MP4
+                if (strtolower($parent_folder) === 'animated' && in_array($ext, ['jpg', 'jpeg', 'png'])) {
+                    continue;
+                }
+
+                // 3. Sembunyikan file jika masuk daftar hidden_files
+                if (in_array($rel_path, $hidden_files)) {
+                    continue;
+                }
+
+                if ($parent_folder === '' || in_array($parent_folder, $visible_folders)) {
+                    $encoded_client = rawurlencode($resolved_folder);
+                    $encoded_rel_path = implode('/', array_map('rawurlencode', explode('/', $rel_path)));
+                    $files_data[] = [
+                        'file' => $rel_path,
+                        'path' => 'photos/' . $encoded_client . '/' . $encoded_rel_path,
+                        'ext'  => $ext,
+                        'time' => $file->getMTime()
+                    ];
+                }
+            }
+        }
+    }
+}
+
+// =========================================================================
+// ALGORITMA GROUPING PER SESI LUMABOOTH (Anchor-Based Proximity <= 45 detik)
+// Mengelompokkan Prints + Animated (MP4/GIF) + Singles dari 1 sesi foto tamu!
+// =========================================================================
+$sessions_map = [];
+$anchor_timestamps = [];
+
+$extractTs = function($fname, $fallback_time) {
+    if (preg_match('/^(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})/', $fname, $m)) {
+        return strtotime("{$m[1]}-{$m[2]}-{$m[3]} {$m[4]}:{$m[5]}:{$m[6]}");
+    }
+    return $fallback_time;
+};
+
+// Tahap 1: Daftarkan semua Anchor Sesi terlebih dahulu (dari Prints / Animated / Videos / GIF)
+foreach ($files_data as $data) {
+    $path_lower = strtolower($data['file']);
+    $filename = basename($data['file']);
+    $ext = $data['ext'];
+
+    if (strpos($path_lower, 'prints/') !== false ||
+        strpos($path_lower, 'animated/') !== false ||
+        strpos($path_lower, 'videos/') !== false ||
+        in_array($ext, ['mp4', 'gif', 'mov', 'webm'])) {
+
+        if (preg_match('/^(\d{8}_\d{6}_\d{3})/', $filename, $matches)) {
+            $base_id = $matches[1];
+        } else {
+            $base_id = preg_replace('/(_mp4|_gif|\.[a-zA-Z0-9]+)$/i', '', $filename);
+        }
+
+        if (!isset($sessions_map[$base_id])) {
+            $ts = $extractTs($filename, $data['time']);
+            $sessions_map[$base_id] = [
+                'id' => 'session_' . $base_id,
+                'time' => $ts,
+                'files' => []
+            ];
+            $anchor_timestamps[$base_id] = $ts;
+        }
+    }
+}
+
+// Tahap 2: Masukkan seluruh file (termasuk Singles & Originals) ke Sesi Anchor terdekat
+foreach ($files_data as $data) {
+    $filename = basename($data['file']);
+    $ts = $extractTs($filename, $data['time']);
+
+    if (preg_match('/^(\d{8}_\d{6}_\d{3})/', $filename, $matches)) {
+        $base_id = $matches[1];
+    } else {
+        $base_id = preg_replace('/(_mp4|_gif|\.[a-zA-Z0-9]+)$/i', '', $filename);
+    }
+
+    if (isset($sessions_map[$base_id])) {
+        $sessions_map[$base_id]['files'][] = $data;
+        if ($ts > $sessions_map[$base_id]['time']) {
+            $sessions_map[$base_id]['time'] = $ts;
+        }
+        continue;
+    }
+
+    $best_anchor_id = null;
+    $min_diff = 999999;
+    foreach ($anchor_timestamps as $aid => $ats) {
+        $diff = abs($ats - $ts);
+        if ($diff <= 45 && $diff < $min_diff) {
+            $min_diff = $diff;
+            $best_anchor_id = $aid;
+        }
+    }
+
+    if ($best_anchor_id !== null) {
+        $sessions_map[$best_anchor_id]['files'][] = $data;
+        if ($ts > $sessions_map[$best_anchor_id]['time']) {
+            $sessions_map[$best_anchor_id]['time'] = $ts;
+        }
+    } else {
+        if (!isset($sessions_map[$base_id])) {
+            $sessions_map[$base_id] = [
+                'id' => 'session_' . $base_id,
+                'time' => $ts,
+                'files' => [$data]
+            ];
+        } else {
+            $sessions_map[$base_id]['files'][] = $data;
+            if ($ts > $sessions_map[$base_id]['time']) {
+                $sessions_map[$base_id]['time'] = $ts;
+            }
+        }
+    }
+}
+
+// Urutkan sesi dari yang paling baru
+usort($sessions_map, function($a, $b) {
+    return $b['time'] - $a['time'];
 });
 
-// Mode AJAX JSON untuk live polling tanpa reload
+// Urutkan isi file dalam tiap sesi: 1. Prints (Cover Utama), 2. Animated/Video, 3. Singles
+foreach ($sessions_map as &$session) {
+    usort($session['files'], function($a, $b) {
+        $getPriority = function($f) {
+            $path_lower = strtolower($f['file']);
+            if (strpos($path_lower, 'prints/') !== false) return 3;
+            if (strpos($path_lower, 'animated/') !== false || strpos($path_lower, 'videos/') !== false || in_array($f['ext'], ['mp4', 'gif', 'mov', 'webm'])) return 2;
+            return 1;
+        };
+        $pA = $getPriority($a);
+        $pB = $getPriority($b);
+        if ($pA !== $pB) return $pB - $pA;
+        return $a['time'] - $b['time'];
+    });
+}
+unset($session);
+
+$sessions = array_values($sessions_map);
+
+// Jika dipanggil via AJAX untuk live auto-refresh tanpa kedip
 if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
     header('Content-Type: application/json; charset=utf-8');
     echo json_encode([
-        'count' => count($media_items),
-        'items' => $media_items
+        'session_count' => count($sessions),
+        'total_files' => count($files_data),
+        'sessions' => $sessions
     ]);
     exit;
 }
-
-// Helper format tanggal Indo
-function formatTglIndo($dateStr) {
-    $date = date_create($dateStr);
-    if (!$date) return $dateStr;
-    $bulan = ['01'=>'Januari','02'=>'Februari','03'=>'Maret','04'=>'April','05'=>'Mei','06'=>'Juni','07'=>'Juli','08'=>'Agustus','09'=>'September','10'=>'Oktober','11'=>'November','12'=>'Desember'];
-    return date_format($date, 'd') . ' ' . ($bulan[date_format($date, 'm')] ?? '') . ' ' . date_format($date, 'Y');
-}
-
-$year_c = date('Y', strtotime($client['tanggal_event']));
-$clean_name_c = preg_replace('/\s+/', '', $client['nama_client']);
-$direct_url_c = rtrim($base_url, '/') . '/' . $year_c . '/' . $clean_name_c;
-$highlight_file = $_GET['file'] ?? '';
 ?>
 <!DOCTYPE html>
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title><?= htmlspecialchars($client['nama_client']) ?> - YUHU Photobooth Gallery</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><?php echo htmlspecialchars($display_tab_title); ?></title>
     <link rel="icon" href="https://qr.yuhu.co.id/2025/icon.png" type="image/png">
     <link rel="apple-touch-icon" href="https://qr.yuhu.co.id/2025/icon.png">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-        body { font-family: 'Inter', sans-serif; }
-        .masonry {
-            column-count: 2;
-            column-gap: 0.85rem;
-        }
-        @media (min-width: 640px) { .masonry { column-count: 3; column-gap: 1rem; } }
-        @media (min-width: 1024px) { .masonry { column-count: 4; column-gap: 1.25rem; } }
-        .masonry-item {
-            break-inside: avoid;
-            margin-bottom: 0.85rem;
-        }
-        @media (min-width: 640px) { .masonry-item { margin-bottom: 1rem; } }
-        @media (min-width: 1024px) { .masonry-item { margin-bottom: 1.25rem; } }
-    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Poppins:wght@700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <script>
+        let gallerySessions = <?php echo json_encode($sessions); ?>;
+        let totalFilesCount = <?php echo count($files_data); ?>;
+    </script>
 </head>
-<body class="bg-slate-50 min-h-screen flex flex-col text-slate-800">
+<body>
 
-    <!-- Sticky Navbar -->
-    <header class="bg-white/90 backdrop-blur-md border-b border-slate-200/80 sticky top-0 z-40">
-        <div class="max-w-6xl mx-auto px-4 py-3.5 flex items-center justify-between gap-3">
-            <div class="flex items-center gap-3 min-w-0">
-                <a href="../" class="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors flex-shrink-0" title="Kembali ke Portal">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
-                </a>
-                <img src="https://qr.yuhu.co.id/2025/icon.png" alt="Yuhu" class="w-9 h-9 rounded-lg shadow-sm flex-shrink-0">
-                <div class="truncate">
-                    <h1 class="font-extrabold text-slate-900 text-base md:text-lg leading-tight truncate"><?= htmlspecialchars($client['nama_client']) ?></h1>
-                    <div class="flex items-center gap-2 text-xs text-slate-500">
-                        <span><?= formatTglIndo($client['tanggal_event']) ?></span>
-                        <span>•</span>
-                        <span class="inline-flex items-center gap-1 text-emerald-600 font-semibold">
-                            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                            Live Sync
-                        </span>
-                    </div>
-                </div>
-            </div>
-
-            <div class="flex items-center gap-2 flex-shrink-0">
-                <button onclick="copyShareLink('<?= htmlspecialchars($direct_url_c, ENT_QUOTES) ?>', this)" class="inline-flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-3.5 py-2.5 rounded-xl shadow-sm transition-all">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path></svg>
-                    <span>Bagikan Galeri</span>
-                </button>
-            </div>
+    <header class="gallery-header">
+        <div class="logo">
+            <img src="https://qr.yuhu.co.id/client/logo.png" onerror="this.src='logo.png'" alt="YUHU PhotoBooth Logo">
+        </div>
+        <div class="event-info">
+            <h1><?php echo htmlspecialchars($display_title); ?></h1>
+            <p><?php echo nl2br(htmlspecialchars($display_subtitle)); ?></p>
         </div>
     </header>
 
-    <!-- Event Banner & Filter Bar -->
-    <section class="max-w-6xl mx-auto w-full px-4 pt-5 pb-2">
-        <div class="bg-white rounded-2xl p-4 md:p-5 border border-slate-200/80 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
-                <div class="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-blue-600 bg-blue-50 px-2.5 py-1 rounded-md mb-1.5">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.242-4.243a8 8 0 1111.314 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-                    <?= htmlspecialchars(str_replace(["\r\n", "\n"], ' • ', $client['lokasi'] ?? 'YUHU Photobooth Event')) ?>
-                </div>
-                <p class="text-xs text-slate-500">Foto dan video dari mesin LumaBooth akan otomatis muncul di halaman ini secara *real-time*.</p>
-            </div>
-
-            <!-- Filter Tabs -->
-            <div class="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl self-start md:self-auto">
-                <button onclick="filterMedia('all')" id="tab-all" class="filter-tab bg-white text-slate-900 shadow-sm text-xs font-bold px-3 py-1.5 rounded-lg transition-all">
-                    Semua (<span id="count-all"><?= count($media_items) ?></span>)
-                </button>
-                <button onclick="filterMedia('photo')" id="tab-photo" class="filter-tab text-slate-600 hover:text-slate-900 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all">
-                    Foto
-                </button>
-                <button onclick="filterMedia('gif')" id="tab-gif" class="filter-tab text-slate-600 hover:text-slate-900 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all">
-                    GIF
-                </button>
-                <button onclick="filterMedia('video')" id="tab-video" class="filter-tab text-slate-600 hover:text-slate-900 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all">
-                    Video / Boomerang
-                </button>
-            </div>
-        </div>
-    </section>
-
-    <!-- Gallery Content -->
-    <main class="max-w-6xl mx-auto w-full px-4 py-4 flex-grow">
-        <div id="empty-state" class="<?= count($media_items) > 0 ? 'hidden' : '' ?> bg-white rounded-3xl border border-slate-200/80 p-12 text-center my-6 shadow-sm">
-            <div class="w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-4">
-                <svg class="w-8 h-8 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-            </div>
-            <h3 class="text-lg font-extrabold text-slate-900">Menunggu Foto dari Photobooth...</h3>
-            <p class="mt-1 text-sm text-slate-500 max-w-md mx-auto">Halaman ini terhubung langsung dengan aplikasi LumaBooth. Begitu sesi foto selesai, hasilnya akan otomatis tampil di sini tanpa perlu refresh.</p>
+    <main class="gallery-container">
+        <div id="emptyState" class="empty-state" style="<?php echo empty($sessions) ? '' : 'display:none;'; ?>">
+            <p>Belum ada foto yang diunggah untuk event ini.</p>
+            <p>Menunggu foto dari LumaBooth...</p>
         </div>
 
-        <div id="gallery-grid" class="masonry <?= count($media_items) === 0 ? 'hidden' : '' ?>">
-            <?php foreach ($media_items as $idx => $item): ?>
-                <div class="masonry-item media-card group relative rounded-2xl overflow-hidden bg-white border border-slate-200/80 shadow-sm hover:shadow-xl transition-all duration-300 cursor-pointer"
-                     data-type="<?= $item['type'] ?>"
-                     data-name="<?= htmlspecialchars($item['name']) ?>"
-                     onclick="openLightbox(<?= $idx ?>)">
-
-                    <?php if ($item['type'] === 'video'): ?>
-                        <video src="<?= $item['url'] ?>" class="w-full h-auto object-cover" muted loop autoplay playsinline preload="metadata"></video>
-                        <span class="absolute top-2.5 left-2.5 bg-black/60 backdrop-blur-sm text-white text-[10px] font-bold uppercase px-2 py-0.5 rounded-md flex items-center gap-1">
-                            ▶ VIDEO
-                        </span>
+        <div id="masonryGrid" class="masonry-grid" style="<?php echo empty($sessions) ? 'display:none;' : ''; ?>">
+            <?php foreach ($sessions as $index => $session): ?>
+                <?php $cover = $session['files'][0]; ?>
+                <div class="grid-item" onclick="openSession(<?php echo $index; ?>)">
+                    <?php if (in_array($cover['ext'], ['mp4', 'mov', 'webm'])): ?>
+                        <video src="<?php echo $cover['path']; ?>" muted loop autoplay playsinline></video>
+                        <div class="play-icon">▶</div>
                     <?php else: ?>
-                        <img src="<?= $item['url'] ?>" alt="<?= htmlspecialchars($item['name']) ?>" class="w-full h-auto object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy">
-                        <?php if ($item['type'] === 'gif'): ?>
-                            <span class="absolute top-2.5 left-2.5 bg-purple-600/90 backdrop-blur-sm text-white text-[10px] font-bold uppercase px-2 py-0.5 rounded-md">
-                                GIF
-                            </span>
-                        <?php endif; ?>
+                        <img src="<?php echo $cover['path']; ?>" alt="Photobooth Session Cover" loading="lazy">
                     <?php endif; ?>
 
-                    <!-- Quick Download Overlay -->
-                    <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end justify-between p-3">
-                        <span class="text-white text-xs font-medium truncate pr-2"><?= htmlspecialchars($item['name']) ?></span>
-                        <a href="<?= $item['url'] ?>" download="<?= htmlspecialchars($item['name']) ?>" onclick="event.stopPropagation();" class="bg-white text-slate-900 hover:bg-blue-600 hover:text-white rounded-xl p-2 shadow-lg transition-colors flex-shrink-0" title="Download">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                        </a>
+                    <div class="session-badge">
+                        <?php echo count($session['files']); ?> Media
                     </div>
                 </div>
             <?php endforeach; ?>
         </div>
     </main>
 
-    <!-- Lightbox Modal -->
-    <div id="lightbox" class="fixed inset-0 z-50 bg-black/95 backdrop-blur-md hidden flex-col justify-between p-4 md:p-6 select-none">
-        <!-- Top Bar -->
-        <div class="flex items-center justify-between text-white max-w-5xl mx-auto w-full">
-            <div class="truncate pr-4">
-                <p id="lb-title" class="font-bold text-sm md:text-base truncate"></p>
-                <p class="text-xs text-slate-400"><?= htmlspecialchars($client['nama_client']) ?></p>
+    <!-- Modal / Lightbox Multi-file per Sesi -->
+    <div id="mediaModal" class="modal">
+        <span class="close-btn" onclick="closeModal()">&times;</span>
+        <div class="modal-content-wrapper">
+            <a class="nav-btn prev-btn" onclick="changeSlide(-1)">&#10094;</a>
+            <div id="modalMediaContainer"></div>
+            <a class="nav-btn next-btn" onclick="changeSlide(1)">&#10095;</a>
+
+            <div class="modal-actions">
+                <a id="downloadBtn" href="#" download class="btn-download">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                    Download File Ini
+                </a>
+                <div class="slide-indicator" id="slideIndicator">1 / 1</div>
             </div>
-            <button onclick="closeLightbox()" class="p-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-            </button>
-        </div>
-
-        <!-- Center Media -->
-        <div class="flex-grow flex items-center justify-center relative my-4 overflow-hidden">
-            <button onclick="navLightbox(-1)" class="absolute left-1 md:left-4 z-10 p-3 rounded-full bg-white/10 hover:bg-white/25 text-white transition-colors">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
-            </button>
-
-            <div id="lb-container" class="max-h-[75vh] max-w-full flex items-center justify-center"></div>
-
-            <button onclick="navLightbox(1)" class="absolute right-1 md:right-4 z-10 p-3 rounded-full bg-white/10 hover:bg-white/25 text-white transition-colors">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
-            </button>
-        </div>
-
-        <!-- Bottom Action Bar -->
-        <div class="max-w-md mx-auto w-full flex items-center gap-3">
-            <a id="lb-download" href="#" download class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3.5 px-6 rounded-2xl flex items-center justify-center gap-2 shadow-lg transition-all">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                <span>Download ke HP</span>
-            </a>
-            <button onclick="shareCurrentMedia()" class="bg-white/15 hover:bg-white/25 text-white font-bold py-3.5 px-5 rounded-2xl flex items-center justify-center gap-2 transition-all">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path></svg>
-                <span>Share</span>
-            </button>
         </div>
     </div>
 
-    <footer class="text-center py-6 text-xs text-slate-400">
-        &copy; <?= date('Y') ?> YUHU Photobooth • Powered by LumaBooth Live Sync
-    </footer>
-
+    <script src="script.js"></script>
     <script>
-        let mediaItems = <?= json_encode($media_items) ?>;
-        let currentIndex = 0;
-        let activeFilter = 'all';
-
-        function filterMedia(type) {
-            activeFilter = type;
-            document.querySelectorAll('.filter-tab').forEach(btn => {
-                btn.className = 'filter-tab text-slate-600 hover:text-slate-900 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all';
-            });
-            const activeBtn = document.getElementById('tab-' + type);
-            if (activeBtn) {
-                activeBtn.className = 'filter-tab bg-white text-slate-900 shadow-sm text-xs font-bold px-3 py-1.5 rounded-lg transition-all';
-            }
-
-            document.querySelectorAll('.media-card').forEach(card => {
-                if (type === 'all' || card.dataset.type === type) {
-                    card.classList.remove('hidden');
-                } else {
-                    card.classList.add('hidden');
-                }
-            });
-        }
-
-        function openLightbox(index) {
-            if (!mediaItems[index]) return;
-            currentIndex = index;
-            const item = mediaItems[index];
-            const lb = document.getElementById('lightbox');
-            const container = document.getElementById('lb-container');
-            document.getElementById('lb-title').textContent = item.name;
-            const dlBtn = document.getElementById('lb-download');
-            dlBtn.href = item.url;
-            dlBtn.setAttribute('download', item.name);
-
-            if (item.type === 'video') {
-                container.innerHTML = `<video src="${item.url}" controls autoplay loop playsinline class="max-h-[72vh] max-w-full rounded-2xl shadow-2xl"></video>`;
-            } else {
-                container.innerHTML = `<img src="${item.url}" alt="${item.name}" class="max-h-[72vh] max-w-full object-contain rounded-2xl shadow-2xl">`;
-            }
-
-            lb.classList.remove('hidden');
-            lb.classList.add('flex');
-        }
-
-        function closeLightbox() {
-            const lb = document.getElementById('lightbox');
-            document.getElementById('lb-container').innerHTML = '';
-            lb.classList.add('hidden');
-            lb.classList.remove('flex');
-        }
-
-        function navLightbox(dir) {
-            if (mediaItems.length === 0) return;
-            currentIndex = (currentIndex + dir + mediaItems.length) % mediaItems.length;
-            openLightbox(currentIndex);
-        }
-
-        async function shareCurrentMedia() {
-            const item = mediaItems[currentIndex];
-            if (!item) return;
-            const shareUrl = window.location.origin + window.location.pathname + '?c=<?= urlencode($client['slug']) ?>&file=' + encodeURIComponent(item.name);
-            if (navigator.share) {
-                try {
-                    await navigator.share({
-                        title: '<?= addslashes($client['nama_client']) ?> - YUHU Photobooth',
-                        url: shareUrl
-                    });
-                } catch (e) {}
-            } else {
-                navigator.clipboard.writeText(shareUrl);
-                alert('Link foto berhasil disalin!');
-            }
-        }
-
-        function copyShareLink(url, btn) {
-            navigator.clipboard.writeText(url).then(() => {
-                const span = btn.querySelector('span');
-                const orig = span.innerText;
-                span.innerText = 'Link Tersalin!';
-                setTimeout(() => span.innerText = orig, 2000);
-            });
-        }
-
-        // Buka otomatis jika ada parameter ?file=... (dari scan QR individual)
-        const highlightFile = <?= json_encode($highlight_file) ?>;
-        if (highlightFile) {
-            const foundIdx = mediaItems.findIndex(m => m.name === highlightFile);
-            if (foundIdx !== -1) {
-                openLightbox(foundIdx);
-            }
-        }
-
-        // Live Auto-Sync Polling setiap 8 detik untuk mendeteksi foto baru dari LumaBooth Windows
+        // Auto-Sync Real-time setiap 8 detik: otomatis memunculkan foto baru dari LumaBooth tanpa refresh
         setInterval(async () => {
             try {
-                const res = await fetch(`?c=<?= urlencode($client['slug']) ?>&ajax=1`);
+                const res = await fetch(`?client=<?php echo rawurlencode($resolved_folder); ?>&ajax=1`);
                 const data = await res.json();
-                if (data.count !== mediaItems.length) {
-                    mediaItems = data.items;
-                    document.getElementById('count-all').textContent = data.count;
-                    renderGalleryGrid();
+                if (data.total_files !== totalFilesCount) {
+                    totalFilesCount = data.total_files;
+                    gallerySessions = data.sessions;
+                    const grid = document.getElementById('masonryGrid');
+                    const empty = document.getElementById('emptyState');
+                    if (gallerySessions.length === 0) {
+                        grid.style.display = 'none';
+                        empty.style.display = 'block';
+                    } else {
+                        empty.style.display = 'none';
+                        grid.style.display = 'grid';
+                        grid.innerHTML = gallerySessions.map((session, idx) => {
+                            const cover = session.files[0];
+                            const isVid = ['mp4', 'mov', 'webm'].includes(cover.ext);
+                            const mediaTag = isVid
+                                ? `<video src="${cover.path}" muted loop autoplay playsinline></video><div class="play-icon">▶</div>`
+                                : `<img src="${cover.path}" alt="Photobooth Session Cover" loading="lazy">`;
+                            return `
+                                <div class="grid-item" onclick="openSession(${idx})">
+                                    ${mediaTag}
+                                    <div class="session-badge">${session.files.length} Media</div>
+                                </div>
+                            `;
+                        }).join('');
+                    }
                 }
             } catch (e) {}
         }, 8000);
-
-        function renderGalleryGrid() {
-            const grid = document.getElementById('gallery-grid');
-            const empty = document.getElementById('empty-state');
-            if (mediaItems.length === 0) {
-                grid.classList.add('hidden');
-                empty.classList.remove('hidden');
-                return;
-            }
-            empty.classList.add('hidden');
-            grid.classList.remove('hidden');
-
-            grid.innerHTML = mediaItems.map((item, idx) => {
-                const isHidden = (activeFilter !== 'all' && item.type !== activeFilter) ? 'hidden' : '';
-                let mediaHtml = '';
-                if (item.type === 'video') {
-                    mediaHtml = `
-                        <video src="${item.url}" class="w-full h-auto object-cover" muted loop autoplay playsinline preload="metadata"></video>
-                        <span class="absolute top-2.5 left-2.5 bg-black/60 backdrop-blur-sm text-white text-[10px] font-bold uppercase px-2 py-0.5 rounded-md">▶ VIDEO</span>
-                    `;
-                } else {
-                    const badge = item.type === 'gif' ? `<span class="absolute top-2.5 left-2.5 bg-purple-600/90 backdrop-blur-sm text-white text-[10px] font-bold uppercase px-2 py-0.5 rounded-md">GIF</span>` : '';
-                    mediaHtml = `<img src="${item.url}" alt="${item.name}" class="w-full h-auto object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy">${badge}`;
-                }
-                return `
-                    <div class="masonry-item media-card ${isHidden} group relative rounded-2xl overflow-hidden bg-white border border-slate-200/80 shadow-sm hover:shadow-xl transition-all duration-300 cursor-pointer"
-                         data-type="${item.type}"
-                         data-name="${item.name}"
-                         onclick="openLightbox(${idx})">
-                        ${mediaHtml}
-                        <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end justify-between p-3">
-                            <span class="text-white text-xs font-medium truncate pr-2">${item.name}</span>
-                            <a href="${item.url}" download="${item.name}" onclick="event.stopPropagation();" class="bg-white text-slate-900 hover:bg-blue-600 hover:text-white rounded-xl p-2 shadow-lg transition-colors flex-shrink-0">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                            </a>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        }
     </script>
 </body>
 </html>
