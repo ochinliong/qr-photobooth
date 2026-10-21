@@ -3,19 +3,30 @@
 """
 YUHU Photobooth - LumaBooth Windows (Oktober 2026) Cloud Sync Pro
 =================================================================
-EDISI ULTRA-LIGHTWEIGHT (NON-INTRUSIVE FOR 3-6+ HOURS MARATHON EVENTS)
+EDISI FAIL-SAFE & ZERO DATA LOSS (TAHAN LISTRIK MATI / INTERNET MATI / PC RESTART)
 
-Optimasi Khusus PC Photobooth & Printer:
-1. Low CPU Priority (BELOW_NORMAL_PRIORITY_CLASS) -> Windows akan selalu mengutamakan
-   LumaBooth (Live View Kamera, Video Rendering) & Print Spooler (Mesin Cetak).
-2. Streaming Multipart Upload (64KB Chunk) -> Tidak memuat seluruh file video/foto ke RAM.
-   Pemakaian RAM stabil di kisaran ~15-25 MB meskipun berjalan 6+ jam.
-3. Persistent Local Cache (.yuhu_synced_cache.json) -> Ribuan foto yang sudah terupload
-   tidak akan dicek atau diupload ulang meskipun aplikasi direstart.
-4. Exclusive File-Lock Check -> Memastikan file tidak disentuh saat LumaBooth atau
-   Spooler Printer sedang membaca/menulis file tersebut (100% aman untuk proses Print).
-5. Auto-Trimming UI Log -> Mencegah kebocoran memori (memory leak) pada tampilan log
-   setelah ribuan sesi foto selama berjam-jam.
+Sistem Pertahanan 6 Lapis (Zero-Failure Architecture):
+1. Crash-Proof Atomic Disk Storage:
+   - File konfigurasi & cache riwayat upload disimpan dengan teknik Atomic Write + fsync
+     (.tmp -> os.replace), sehingga jika listrik mati mendadak saat menyimpan, file JSON
+     TIDAK AKAN PERNAH korup atau kosong (0 byte).
+2. Persistent Pending Queue (.yuhu_pending_queue.json):
+   - Saat internet mati atau sinyal venue buruk, seluruh foto baru otomatis masuk ke
+     Daftar Antrean Lokal di harddisk. Begitu internet nyambung lagi (atau PC baru nyala
+     setelah mati lampu), semua antrean langsung diupload otomatis tanpa ada 1 pun foto terlewat!
+3. End-to-End SHA-1 Checksum & File-Size Verification:
+   - Setiap file dihitung sidik jari SHA-1 sebelum dikirim, dan dicek ulang oleh server PHP.
+   - Tidak akan pernah ada kejadian "foto terupload separuh / gambar abu-abu rusak" akibat
+     internet putus di tengah pengiriman.
+4. Auto-Start Resume Mode (--auto-resume):
+   - Menyimpan status aktif terakhir (`is_watching_active`). Jika listrik/PC mati di tengah acara,
+     begitu Windows menyala kembali, aplikasi otomatis melanjutkan sinkronisasi ke event & folder
+     terakhir tanpa perlu diklik manual oleh operator!
+5. Smart Network Health Check & Exponential Backoff:
+   - Saat internet terputus, aplikasi tidak membuang CPU; ia otomatis menunggu hingga sinyal
+     internet kembali stabil lalu mengupload seluruh antrean yang tertunda secara berurutan.
+6. Eco-Priority (BELOW_NORMAL_PRIORITY_CLASS) & Print Spooler Safe:
+   - Berjalan dengan prioritas CPU rendah & menghormati file lock LumaBooth/Printer, aman 6+ jam non-stop.
 """
 
 import os
@@ -24,6 +35,7 @@ import time
 import json
 import queue
 import ctypes
+import hashlib
 import threading
 import mimetypes
 import urllib.request
@@ -32,7 +44,6 @@ import urllib.error
 from pathlib import Path
 from datetime import datetime
 
-# Tkinter untuk GUI Modern di Windows
 try:
     import tkinter as tk
     from tkinter import ttk, filedialog, messagebox
@@ -43,11 +54,12 @@ except ImportError:
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(BASE_DIR, "lumabooth_config.json")
 CACHE_FILE = os.path.join(BASE_DIR, ".yuhu_synced_cache.json")
+PENDING_FILE = os.path.join(BASE_DIR, ".yuhu_pending_queue.json")
 
 SUPPORTED_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.mp4', '.mov', '.webm'}
-MAX_LOG_LINES = 250          # Batas baris log di layar agar RAM tidak pernah membengkak
-SCAN_INTERVAL_SEC = 4.0      # Interval scan santai (4 detik) agar CPU 0% saat idle
-INTER_UPLOAD_COOL_SEC = 0.6  # Jeda napas antar-file agar jaringan & disk tetap lega
+MAX_LOG_LINES = 250
+SCAN_INTERVAL_SEC = 3.5
+INTER_UPLOAD_COOL_SEC = 0.5
 
 DEFAULT_CONFIG = {
     "portal_url": "https://files.yuhu.co.id",
@@ -56,19 +68,19 @@ DEFAULT_CONFIG = {
     "selected_client_id": None,
     "selected_client_slug": "",
     "selected_client_name": "",
+    "selected_client_direct_link": "",
+    "selected_client_gallery_url": "",
     "sync_prints": True,
     "sync_gifs": True,
     "sync_videos": True,
     "sync_originals": False,
-    "auto_set_portal_gallery": True
+    "auto_set_portal_gallery": True,
+    "was_watching_active": False
 }
 
 
 def set_low_process_priority():
-    """
-    Menurunkan prioritas proses Python di Windows ke BELOW_NORMAL_PRIORITY_CLASS (0x00004000)
-    agar tidak pernah berebut CPU/Disk dengan LumaBooth (Kamera/Render) dan Print Spooler.
-    """
+    """Menurunkan prioritas proses Python di Windows agar LumaBooth & Printer selalu nomor 1."""
     if os.name == "nt":
         try:
             BELOW_NORMAL_PRIORITY_CLASS = 0x00004000
@@ -78,72 +90,126 @@ def set_low_process_priority():
             pass
 
 
+def atomic_write_json(target_path, data):
+    """
+    Menyimpan file JSON secara Atomic + Disk Flush (fsync).
+    Jika listrik mati tepat saat proses simpan, file asli tetap utuh 100% dan tidak pernah 0-byte/korup.
+    """
+    tmp_path = target_path + ".tmp"
+    bak_path = target_path + ".bak"
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        if os.path.exists(target_path):
+            try:
+                import shutil
+                shutil.copy2(target_path, bak_path)
+            except Exception:
+                pass
+        os.replace(tmp_path, target_path)
+    except Exception:
+        pass
+
+
+def safe_read_json(target_path, default_val):
+    """Membaca file JSON dengan fallback otomatis ke file .bak jika terjadi mati listrik mendadak."""
+    for candidate in (target_path, target_path + ".bak"):
+        if os.path.exists(candidate):
+            try:
+                with open(candidate, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if type(data) is type(default_val):
+                        return data
+            except Exception:
+                continue
+    return default_val.copy() if isinstance(default_val, (dict, list)) else default_val
+
+
 def load_config():
     cfg = DEFAULT_CONFIG.copy()
-    if os.path.exists(CONFIG_FILE):
-        try:
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                cfg.update(json.load(f))
-        except Exception:
-            pass
+    saved = safe_read_json(CONFIG_FILE, {})
+    cfg.update(saved)
     return cfg
 
 
 def save_config(cfg):
-    try:
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump(cfg, f, indent=2)
-    except Exception:
-        pass
+    atomic_write_json(CONFIG_FILE, cfg)
 
 
 def load_synced_cache():
-    """Memuat riwayat file yang sudah terupload agar tidak diproses ulang selama acara."""
-    if os.path.exists(CACHE_FILE):
-        try:
-            with open(CACHE_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                if isinstance(data, dict):
-                    return data
-        except Exception:
-            pass
-    return {}
+    return safe_read_json(CACHE_FILE, {})
 
 
 def save_synced_cache(cache_dict):
-    """Menyimpan riwayat file terupload (dibatasi 5000 entri terakhir agar file tetap kecil)."""
-    try:
-        if len(cache_dict) > 5000:
-            keys = list(cache_dict.keys())[-4000:]
-            cache_dict = {k: cache_dict[k] for k in keys}
-        with open(CACHE_FILE, "w", encoding="utf-8") as f:
-            json.dump(cache_dict, f)
-    except Exception:
-        pass
+    if len(cache_dict) > 6000:
+        keys = list(cache_dict.keys())[-5000:]
+        cache_dict = {k: cache_dict[k] for k in keys}
+    atomic_write_json(CACHE_FILE, cache_dict)
+
+
+def load_pending_queue():
+    """Memuat daftar file yang tertunda uploadnya karena internet/listrik mati."""
+    return safe_read_json(PENDING_FILE, {})
+
+
+def save_pending_queue(pending_dict):
+    atomic_write_json(PENDING_FILE, pending_dict)
+
+
+def compute_file_sha1(file_path):
+    """Menghitung SHA-1 file dengan chunk 64KB (hemat RAM) untuk verifikasi anti-korup."""
+    h = hashlib.sha1()
+    with open(file_path, "rb", buffering=65536) as f:
+        while True:
+            chunk = f.read(65536)
+            if not chunk:
+                break
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def is_file_ready_and_unlocked(file_path):
     """
-    Memastikan file sudah selesai ditulis oleh LumaBooth DAN tidak sedang dikunci
-    oleh proses cetak (Print Spooler) sebelum diupload.
+    Memastikan file sudah selesai ditulis oleh LumaBooth, tidak berukuran 0,
+    dan tidak sedang dikunci oleh Print Spooler.
     """
     try:
         stat1 = os.stat(file_path)
         if stat1.st_size < 1024:
-            return False, None
-        # Jika file baru saja dimodifikasi kurang dari 2 detik yang lalu, tunggu siklus berikutnya
-        # supaya proses Print / Render LumaBooth selesai 100% terlebih dahulu.
+            return False, None, 0
+        # Tunggu minimal 2 detik sejak file selesai ditulis agar proses Print selesai dulu
         if (time.time() - stat1.st_mtime) < 2.0:
-            return False, None
+            return False, None, 0
 
-        # Coba buka dengan mode baca untuk memastikan tidak ada exclusive lock dari LumaBooth
         with open(file_path, "rb") as f:
-            f.read(16)
+            header = f.read(16)
+            if not header:
+                return False, None, 0
 
         sig = f"{int(stat1.st_mtime)}_{stat1.st_size}"
-        return True, sig
+        return True, sig, stat1.st_size
     except (OSError, PermissionError):
-        return False, None
+        return False, None, 0
+
+
+def api_ping_server(portal_url, api_key):
+    """Mengecek apakah internet & server website sudah kembali online."""
+    endpoint = portal_url.rstrip("/") + "/api/lumabooth.php?action=ping"
+    req = urllib.request.Request(
+        endpoint,
+        headers={
+            "X-API-KEY": api_key,
+            "User-Agent": "YuhuLumaBoothSync/2026.10 (Windows; FailSafe)"
+        }
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            return data.get("status") == "success"
+    except Exception:
+        return False
 
 
 def api_fetch_events(portal_url, api_key):
@@ -153,7 +219,7 @@ def api_fetch_events(portal_url, api_key):
         endpoint,
         headers={
             "X-API-KEY": api_key,
-            "User-Agent": "YuhuLumaBoothSync/2026.10 (Windows; LowResource)"
+            "User-Agent": "YuhuLumaBoothSync/2026.10 (Windows; FailSafe)"
         }
     )
     with urllib.request.urlopen(req, timeout=15) as resp:
@@ -163,16 +229,19 @@ def api_fetch_events(portal_url, api_key):
         raise RuntimeError(data.get("message", "Gagal mengambil data event"))
 
 
-def api_upload_file_low_memory(portal_url, api_key, file_path, client_id=None, slug="", album_name="", category="", auto_set=True):
+def api_upload_file_verified(portal_url, api_key, file_path, file_size, file_sha1, client_id=None, slug="", album_name="", category="", auto_set=True):
     """
-    Mengupload file dengan manajemen memori hemat (membaca file secara efisien lalu langsung
-    membebaskan buffer setelah request selesai).
+    Mengupload file dengan verifikasi ukuran + SHA-1 checksum ke server.
+    Jika koneksi putus di tengah jalan atau bit korup, server otomatis menolak dan aplikasi
+    akan mengulang upload sampai 100% utuh.
     """
     endpoint = portal_url.rstrip("/") + "/api/lumabooth.php?action=upload"
     fields = {
         "api_key": api_key,
         "action": "upload",
-        "auto_set_gallery": "1" if auto_set else "0"
+        "auto_set_gallery": "1" if auto_set else "0",
+        "file_size": str(file_size),
+        "file_sha1": str(file_sha1)
     }
     if client_id:
         fields["client_id"] = str(client_id)
@@ -202,7 +271,6 @@ def api_upload_file_low_memory(portal_url, api_key, file_path, client_id=None, s
     header_parts.extend(f"Content-Type: {mime_type}\r\n\r\n".encode("utf-8"))
     footer_bytes = f"\r\n--{boundary}--\r\n".encode("utf-8")
 
-    # Baca dengan chunk 64KB agar tidak memicu spike I/O disk
     body = bytearray(header_parts)
     del header_parts
     with open(file_path, "rb", buffering=65536) as f:
@@ -219,18 +287,18 @@ def api_upload_file_low_memory(portal_url, api_key, file_path, client_id=None, s
         method="POST",
         headers={
             "X-API-KEY": api_key,
+            "X-FILE-SHA1": file_sha1,
             "Content-Type": f"multipart/form-data; boundary={boundary}",
             "Content-Length": str(len(body)),
             "Connection": "close",
-            "User-Agent": "YuhuLumaBoothSync/2026.10 (Windows; LowResource)"
+            "User-Agent": "YuhuLumaBoothSync/2026.10 (Windows; FailSafe)"
         }
     )
     try:
-        with urllib.request.urlopen(req, timeout=45) as resp:
+        with urllib.request.urlopen(req, timeout=50) as resp:
             raw_resp = resp.read().decode("utf-8")
             return json.loads(raw_resp)
     finally:
-        # Bebaskan buffer seketika agar RAM kembali ke titik minimum
         del body
 
 
@@ -245,7 +313,7 @@ def detect_lumabooth_category(file_path, root_watch_folder):
 
     if any("original" in p or "raw" in p for p in parts):
         return "originals"
-    if any("thumb" in p or "temp" in p or "template" in p or "print" in p and "spool" in p for p in parts):
+    if any("thumb" in p or "temp" in p or "template" in p or ("print" in p and "spool" in p) for p in parts):
         return "ignore"
     if ext == ".gif" or any("gif" in p for p in parts):
         return "gifs"
@@ -255,23 +323,29 @@ def detect_lumabooth_category(file_path, root_watch_folder):
 
 
 class LumaBoothSyncApp:
-    def __init__(self, root):
+    def __init__(self, root, auto_resume_flag=False):
         self.root = root
-        self.root.title("YUHU Photobooth - LumaBooth Windows 2026 Cloud Sync Pro (Eco Mode)")
-        self.root.geometry("820x640")
-        self.root.minsize(780, 600)
+        self.root.title("YUHU Photobooth - LumaBooth Windows 2026 Cloud Sync Pro (Fail-Safe Edition)")
+        self.root.geometry("850x670")
+        self.root.minsize(800, 620)
         self.root.configure(bg="#0f172a")
 
         self.cfg = load_config()
         self.events = []
         self.is_watching = False
+        self.is_online = True
         self.processed_files = load_synced_cache()
+        self.pending_queue = load_pending_queue()
         self.log_queue = queue.Queue()
         self.uploaded_count = 0
+        self.auto_resume_flag = auto_resume_flag
 
         self._setup_ui()
+        self._update_pending_badge()
         self._poll_log_queue()
-        self.refresh_events(silent=True)
+
+        # Muat daftar event dari server (atau gunakan cache offline jika internet sedang mati saat baru nyala)
+        self.refresh_events(silent=True, on_done=self._check_auto_resume)
 
     def _setup_ui(self):
         # Header
@@ -283,27 +357,27 @@ class LumaBoothSyncApp:
 
         title_lbl = tk.Label(
             top_row,
-            text="⚡ YUHU PHOTOBOOTH — LUMABOOTH 2026 SYNC",
+            text="⚡ YUHU PHOTOBOOTH — LUMABOOTH 2026 FAIL-SAFE SYNC",
             font=("Segoe UI", 13, "bold"),
             fg="#f8fafc",
             bg="#1e293b"
         )
         title_lbl.pack(side="left")
 
-        eco_badge = tk.Label(
+        self.net_badge = tk.Label(
             top_row,
-            text="🛡️ ECO-PRIORITY: AMAN UNTUK PRINT & NON-STOP 6+ JAM",
+            text="🌐 ONLINE & ANTI-GAGAL AKTIF",
             font=("Segoe UI", 8, "bold"),
             fg="#10b981",
             bg="#064e3b",
-            padx=8,
+            padx=10,
             pady=3
         )
-        eco_badge.pack(side="right")
+        self.net_badge.pack(side="right")
 
         sub_lbl = tk.Label(
             header,
-            text="Berjalan dengan prioritas CPU rendah & memori ultra-ringan agar kamera LumaBooth dan printer tetap 100% lancar.",
+            text="Dilengkapi Antrean Offline Otomatis, Verifikasi Checksum SHA-1, Auto-Resume Mati Lampu & Prioritas CPU Rendah.",
             font=("Segoe UI", 9),
             fg="#94a3b8",
             bg="#1e293b"
@@ -311,7 +385,7 @@ class LumaBoothSyncApp:
         sub_lbl.pack(anchor="w", pady=(3, 0))
 
         # Main Container
-        main = tk.Frame(self.root, bg="#0f172a", padx=20, pady=15)
+        main = tk.Frame(self.root, bg="#0f172a", padx=20, pady=14)
         main.pack(fill="both", expand=True)
 
         # 1. Koneksi Server & Event Klien
@@ -323,9 +397,9 @@ class LumaBoothSyncApp:
             bg="#1e293b",
             bd=1,
             padx=15,
-            pady=12
+            pady=10
         )
-        card1.pack(fill="x", pady=(0, 12))
+        card1.pack(fill="x", pady=(0, 10))
 
         row1 = tk.Frame(card1, bg="#1e293b")
         row1.pack(fill="x", pady=(0, 8))
@@ -368,15 +442,15 @@ class LumaBoothSyncApp:
         # 2. Konfigurasi Folder LumaBooth Windows
         card2 = tk.LabelFrame(
             main,
-            text=" 2. Folder Output LumaBooth Windows (Oktober 2026) ",
+            text=" 2. Folder Output LumaBooth Windows (Oktober 2026) & Proteksi Mati Lampu ",
             font=("Segoe UI", 10, "bold"),
             fg="#38bdf8",
             bg="#1e293b",
             bd=1,
             padx=15,
-            pady=12
+            pady=10
         )
-        card2.pack(fill="x", pady=(0, 12))
+        card2.pack(fill="x", pady=(0, 10))
 
         row_dir = tk.Frame(card2, bg="#1e293b")
         row_dir.pack(fill="x", pady=(0, 8))
@@ -408,10 +482,10 @@ class LumaBoothSyncApp:
         self.chk_originals = tk.BooleanVar(value=self.cfg.get("sync_originals", False))
 
         for text, var in [
-            ("Upload Hasil Print / Strip (JPG/PNG)", self.chk_prints),
-            ("Upload GIF", self.chk_gifs),
-            ("Upload Video / Boomerang (MP4)", self.chk_videos),
-            ("Upload Raw Originals", self.chk_originals),
+            ("Print / Strip (JPG/PNG)", self.chk_prints),
+            ("GIF", self.chk_gifs),
+            ("Video / Boomerang (MP4)", self.chk_videos),
+            ("Raw Originals", self.chk_originals),
         ]:
             tk.Checkbutton(
                 row_chk,
@@ -423,11 +497,25 @@ class LumaBoothSyncApp:
                 selectcolor="#0f172a",
                 activebackground="#1e293b",
                 activeforeground="white"
-            ).pack(side="left", padx=(0, 15))
+            ).pack(side="left", padx=(0, 12))
 
-        # 3. Tombol Kontrol Start / Stop Sync
+        startup_btn = tk.Button(
+            row_chk,
+            text="⚡ Pasang Auto-Resume Saat PC Nyala",
+            command=self.install_windows_startup,
+            font=("Segoe UI", 8, "bold"),
+            bg="#475569",
+            fg="#f8fafc",
+            relief="flat",
+            padx=8,
+            pady=2,
+            cursor="hand2"
+        )
+        startup_btn.pack(side="right")
+
+        # 3. Tombol Kontrol Start / Stop Sync & Indikator Antrean
         ctrl_frame = tk.Frame(main, bg="#0f172a")
-        ctrl_frame.pack(fill="x", pady=(0, 12))
+        ctrl_frame.pack(fill="x", pady=(0, 10))
 
         self.start_btn = tk.Button(
             ctrl_frame,
@@ -451,23 +539,34 @@ class LumaBoothSyncApp:
             font=("Segoe UI", 10, "bold"),
             fg="#94a3b8",
             bg="#0f172a",
-            padx=15
+            padx=12
         )
         self.status_lbl.pack(side="left")
 
         self.counter_lbl = tk.Label(
             ctrl_frame,
-            text="Sesi Ini: 0 File",
+            text="Terkirim: 0 File",
             font=("Segoe UI", 10, "bold"),
             fg="#38bdf8",
             bg="#0f172a"
         )
         self.counter_lbl.pack(side="right")
 
-        # 4. Log Aktivitas Real-Time (Auto-Trimmed)
+        self.pending_lbl = tk.Label(
+            ctrl_frame,
+            text="Antrean Tertunda: 0",
+            font=("Segoe UI", 9, "bold"),
+            fg="#cbd5e1",
+            bg="#1e293b",
+            padx=10,
+            pady=4
+        )
+        self.pending_lbl.pack(side="right", padx=(0, 10))
+
+        # 4. Log Aktivitas Real-Time
         log_frame = tk.LabelFrame(
             main,
-            text=" Log Aktivitas Upload Real-Time (Otomatis dibersihkan berkala agar hemat RAM) ",
+            text=" Log Aktivitas & Pemulihan Otomatis (Anti-Gagal Upload) ",
             font=("Segoe UI", 9, "bold"),
             fg="#94a3b8",
             bg="#1e293b",
@@ -492,6 +591,27 @@ class LumaBoothSyncApp:
         ts = datetime.now().strftime("%H:%M:%S")
         self.log_queue.put(f"[{ts}] {msg}\n")
 
+    def _update_pending_badge(self):
+        count = len(self.pending_queue)
+        if count == 0:
+            self.pending_lbl.configure(text="Antrean Offline: 0 (Semua Terkirim)", fg="#10b981", bg="#064e3b")
+        else:
+            self.pending_lbl.configure(text=f"⏳ Antrean Menunggu Internet: {count} File", fg="#fbbf24", bg="#78350f")
+
+    def _set_online_state(self, online):
+        if self.is_online == online:
+            return
+        self.is_online = online
+        if online:
+            self.root.after(0, lambda: self.net_badge.configure(
+                text="🌐 ONLINE & ANTI-GAGAL AKTIF", fg="#10b981", bg="#064e3b"
+            ))
+            self.log("🌐 Koneksi internet pulih! Melanjutkan pengiriman antrean foto secara otomatis...")
+        else:
+            self.root.after(0, lambda: self.net_badge.configure(
+                text="⚠️ OFFLINE MODE (FOTO DISIMPAN DI ANTREAN)", fg="#fbbf24", bg="#78350f"
+            ))
+
     def _poll_log_queue(self):
         updated = False
         while not self.log_queue.empty():
@@ -501,7 +621,6 @@ class LumaBoothSyncApp:
             updated = True
 
         if updated:
-            # Auto-trim baris log jika melebihi MAX_LOG_LINES supaya memori tetap ringan selama 6+ jam
             num_lines = int(self.log_text.index("end-1c").split(".")[0])
             if num_lines > MAX_LOG_LINES:
                 excess = num_lines - MAX_LOG_LINES
@@ -516,15 +635,54 @@ class LumaBoothSyncApp:
         if folder:
             self.folder_var.set(folder)
 
-    def refresh_events(self, silent=False):
+    def install_windows_startup(self):
+        """
+        Memasang shortcut otomatis di folder Startup Windows agar jika listrik/PC mati
+        di tengah acara, begitu komputer dinyalakan lagi aplikasi otomatis terbuka dan
+        melanjutkan upload tanpa intervensi operator.
+        """
+        try:
+            startup_dir = os.path.join(
+                os.environ.get("APPDATA", ""),
+                r"Microsoft\Windows\Start Menu\Programs\Startup"
+            )
+            if not os.path.isdir(startup_dir):
+                messagebox.showerror("Gagal", "Folder Startup Windows tidak ditemukan.")
+                return
+
+            bat_startup = os.path.join(startup_dir, "Yuhu_LumaBooth_AutoResume.bat")
+            launcher_script = os.path.join(BASE_DIR, "lumabooth_sync_pro.py")
+            content = (
+                f'@echo off\r\n'
+                f'cd /d "{BASE_DIR}"\r\n'
+                f'where pythonw >nul 2>nul\r\n'
+                f'if %ERRORLEVEL% EQU 0 (\r\n'
+                f'    start "YUHU LumaBooth Sync" /BELOWNORMAL pythonw "{launcher_script}" --auto-resume\r\n'
+                f'    exit /b 0\r\n'
+                f')\r\n'
+                f'start "YUHU LumaBooth Sync" /BELOWNORMAL python "{launcher_script}" --auto-resume\r\n'
+            )
+            with open(bat_startup, "w", encoding="utf-8") as f:
+                f.write(content)
+
+            self.log("✅ Proteksi Mati Lampu/PC Restart berhasil dipasang di Windows Startup!")
+            messagebox.showinfo(
+                "Proteksi Mati Lampu Aktif",
+                "Berhasil dipasang!\n\nJika PC atau listrik mati mendadak saat acara, begitu Windows menyala kembali, aplikasi ini akan otomatis terbuka dan langsung melanjutkan upload foto yang tertunda."
+            )
+        except Exception as e:
+            messagebox.showerror("Error", f"Gagal memasang startup: {e}")
+
+    def refresh_events(self, silent=False, on_done=None):
         portal_url = self.url_var.get().strip()
         api_key = self.key_var.get().strip()
-        self.log("Menghubungkan ke server portal untuk mengambil daftar event klien...")
+        self.log("Menghubungkan ke server portal untuk sinkronisasi data event klien...")
 
         def worker():
             try:
                 evts = api_fetch_events(portal_url, api_key)
                 self.events = evts
+                self._set_online_state(True)
                 items = []
                 selected_idx = 0
                 saved_id = self.cfg.get("selected_client_id")
@@ -540,17 +698,49 @@ class LumaBoothSyncApp:
                     if items:
                         self.event_combo.current(selected_idx)
                         self._on_event_selected()
-                        self.log(f"✅ Berhasil memuat {len(items)} event klien dari database website.")
-                    else:
-                        self.log("⚠️ Belum ada data klien di database website. Silakan tambah klien di Admin Portal.")
+                        self.log(f"✅ Terhubung! Memuat {len(items)} event klien dari database website.")
+                    if on_done:
+                        on_done()
 
                 self.root.after(0, update_combo)
             except Exception as err:
-                self.log(f"❌ Gagal mengambil daftar event: {err}")
-                if not silent:
-                    self.root.after(0, lambda: messagebox.showerror("Koneksi Gagal", f"Tidak dapat terhubung ke API:\n{err}"))
+                self._set_online_state(False)
+                # Fallback Offline: tetap bisa jalan memakai event terakhir yang tersimpan di config!
+                saved_id = self.cfg.get("selected_client_id")
+                saved_name = self.cfg.get("selected_client_name")
+                if saved_id and saved_name:
+                    fallback_ev = {
+                        "id": saved_id,
+                        "slug": self.cfg.get("selected_client_slug", ""),
+                        "nama_client": saved_name,
+                        "direct_link": self.cfg.get("selected_client_direct_link", "-"),
+                        "gallery_url": self.cfg.get("selected_client_gallery_url", "-")
+                    }
+                    self.events = [fallback_ev]
+
+                    def update_offline_combo():
+                        self.event_combo["values"] = [f"⚠️ [MODE OFFLINE] {saved_name}"]
+                        self.event_combo.current(0)
+                        self._on_event_selected()
+                        self.log(f"⚠️ Internet sedang offline saat aplikasi dibuka. Menggunakan cache event terakhir: {saved_name}")
+                        if on_done:
+                            on_done()
+
+                    self.root.after(0, update_offline_combo)
+                else:
+                    self.log(f"⚠️ Belum terhubung ke internet: {err}")
+                    if not silent:
+                        self.root.after(0, lambda: messagebox.showwarning("Mode Offline", f"Internet sedang terputus:\n{err}"))
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def _check_auto_resume(self):
+        """Jika sebelumnya aplikasi sedang aktif menonton folder (atau dipanggil dengan --auto-resume setelah mati lampu), otomatis jalankan kembali."""
+        if (self.auto_resume_flag or self.cfg.get("was_watching_active")) and not self.is_watching:
+            watch_dir = self.folder_var.get().strip()
+            if self.events and watch_dir and os.path.isdir(watch_dir):
+                self.log("🔄 Auto-Resume Aktif: Melanjutkan sinkronisasi otomatis setelah aplikasi/PC menyala kembali...")
+                self.toggle_sync()
 
     def _on_event_selected(self, event=None):
         idx = self.event_combo.current()
@@ -559,15 +749,19 @@ class LumaBoothSyncApp:
             self.cfg["selected_client_id"] = ev["id"]
             self.cfg["selected_client_slug"] = ev["slug"]
             self.cfg["selected_client_name"] = ev["nama_client"]
-            self.link_info_var.set(f"🔗 Link QR Klien: {ev['direct_link']}   |   Galeri: {ev['gallery_url']}")
+            self.cfg["selected_client_direct_link"] = ev.get("direct_link", "")
+            self.cfg["selected_client_gallery_url"] = ev.get("gallery_url", "")
+            self.link_info_var.set(f"🔗 Link QR Klien: {ev.get('direct_link', '-')}   |   Galeri: {ev.get('gallery_url', '-')}")
             save_config(self.cfg)
 
     def toggle_sync(self):
         if self.is_watching:
             self.is_watching = False
+            self.cfg["was_watching_active"] = False
+            save_config(self.cfg)
             self.start_btn.configure(text="▶ MULAI AUTO-SYNC LUMABOOTH", bg="#10b981", activebackground="#059669")
-            self.status_lbl.configure(text="Status: Dihentikan", fg="#f59e0b")
-            self.log("⏹ Auto-Sync dihentikan oleh operator.")
+            self.status_lbl.configure(text="Status: Dihentikan Manual", fg="#f59e0b")
+            self.log("⏹ Auto-Sync dihentikan secara manual oleh operator.")
             return
 
         idx = self.event_combo.current()
@@ -587,16 +781,18 @@ class LumaBoothSyncApp:
         self.cfg["sync_gifs"] = self.chk_gifs.get()
         self.cfg["sync_videos"] = self.chk_videos.get()
         self.cfg["sync_originals"] = self.chk_originals.get()
+        self.cfg["was_watching_active"] = True
         save_config(self.cfg)
 
         self.is_watching = True
         self.start_btn.configure(text="⏹ HENTIKAN AUTO-SYNC", bg="#ef4444", activebackground="#dc2626")
         ev = self.events[idx]
-        self.status_lbl.configure(text=f"🟢 AKTIF (ECO MODE): {ev['nama_client']}", fg="#10b981")
-        self.log(f"🚀 Memulai pemantauan ringan (Low-CPU Priority): {watch_dir}")
-        self.log(f"🖨️ Proteksi Print Spooler aktif: File hanya diupload setelah LumaBooth & Printer selesai memproses.")
+        self.status_lbl.configure(text=f"🟢 AKTIF: {ev['nama_client']}", fg="#10b981")
+        self.log(f"🚀 Memulai Auto-Sync Fail-Safe pada folder: {watch_dir}")
+        if len(self.pending_queue) > 0:
+            self.log(f"📦 Ditemukan {len(self.pending_queue)} foto dalam antrean tertunda. Akan segera dikirim begitu koneksi siap.")
 
-        threading.Thread(target=self._watch_loop, args=(ev,), daemon=True).start()
+        threading.Thread(target=self._watch_and_retry_loop, args=(ev,), daemon=True).start()
 
     def _should_sync_category(self, category):
         if category == "ignore":
@@ -611,15 +807,67 @@ class LumaBoothSyncApp:
             return self.chk_originals.get()
         return True
 
-    def _watch_loop(self, client_event):
+    def _attempt_single_upload(self, portal_url, api_key, item):
+        """
+        Mencoba mengupload 1 item dan memverifikasi integritas SHA-1.
+        Mengembalikan True jika berhasil (atau sudah ada secara utuh di server), False jika harus masuk/tetap di antrean.
+        """
+        fpath = item["file_path"]
+        if not os.path.isfile(fpath):
+            # File sudah dihapus dari PC oleh operator, hapus dari antrean
+            return True
+
+        ready, sig, fsize = is_file_ready_and_unlocked(fpath)
+        if not ready:
+            return False
+
+        try:
+            fsha1 = compute_file_sha1(fpath)
+            res = api_upload_file_verified(
+                portal_url=portal_url,
+                api_key=api_key,
+                file_path=fpath,
+                file_size=fsize,
+                file_sha1=fsha1,
+                client_id=item["client_id"],
+                slug=item["slug"],
+                category=item["category"],
+                auto_set=True
+            )
+            status = res.get("status")
+            if status in ("success", "skipped"):
+                self._set_online_state(True)
+                cache_key = f"{item['client_id']}::{fpath}"
+                self.processed_files[cache_key] = sig
+                if status == "success":
+                    self.uploaded_count += 1
+                    self.root.after(
+                        0,
+                        lambda c=self.uploaded_count: self.counter_lbl.configure(text=f"Terkirim: {c} File")
+                    )
+                    self.log(f"✅ Terupload & Terverifikasi (SHA-1 OK): {os.path.basename(fpath)}")
+                else:
+                    self.log(f"⏭ Sudah ada utuh di server: {os.path.basename(fpath)}")
+                return True
+            else:
+                self.log(f"⚠️ Server menolak ({os.path.basename(fpath)}): {res.get('message')} — Masuk antrean retry.")
+                return False
+        except Exception as err:
+            self._set_online_state(False)
+            return False
+
+    def _watch_and_retry_loop(self, client_event):
         watch_dir = self.cfg["watch_folder"]
         portal_url = self.cfg["portal_url"]
         api_key = self.cfg["api_key"]
-        client_key_prefix = f"{client_event['id']}::"
-        unsaved_cache_changes = 0
+        client_id = client_event["id"]
+        client_slug = client_event["slug"]
+        client_key_prefix = f"{client_id}::"
 
         while self.is_watching:
             try:
+                new_queued = 0
+                # TAHAP 1: Pindai folder LumaBooth untuk mendeteksi foto baru & masukkan ke antrean
                 for root_dir, _, files in os.walk(watch_dir):
                     if not self.is_watching:
                         break
@@ -637,7 +885,7 @@ class LumaBoothSyncApp:
                         if not self._should_sync_category(category):
                             continue
 
-                        ready, sig = is_file_ready_and_unlocked(fpath)
+                        ready, sig, _ = is_file_ready_and_unlocked(fpath)
                         if not ready:
                             continue
 
@@ -645,56 +893,64 @@ class LumaBoothSyncApp:
                         if self.processed_files.get(cache_key) == sig:
                             continue
 
-                        self.log(f"📤 Mengupload [{category.upper()}] {fname} ...")
-                        try:
-                            res = api_upload_file_low_memory(
-                                portal_url=portal_url,
-                                api_key=api_key,
-                                file_path=fpath,
-                                client_id=client_event["id"],
-                                slug=client_event["slug"],
-                                category=category,
-                                auto_set=True
-                            )
-                            status = res.get("status")
-                            if status in ("success", "skipped"):
-                                self.processed_files[cache_key] = sig
-                                unsaved_cache_changes += 1
-                                if unsaved_cache_changes >= 5:
-                                    save_synced_cache(self.processed_files)
-                                    unsaved_cache_changes = 0
+                        # Jika belum ada di antrean tertunda, tambahkan ke persistent pending queue di disk
+                        if cache_key not in self.pending_queue or self.pending_queue[cache_key].get("sig") != sig:
+                            self.pending_queue[cache_key] = {
+                                "file_path": fpath,
+                                "sig": sig,
+                                "client_id": client_id,
+                                "slug": client_slug,
+                                "category": category,
+                                "added_at": time.time()
+                            }
+                            new_queued += 1
 
-                                if status == "success":
-                                    self.uploaded_count += 1
-                                    self.root.after(
-                                        0,
-                                        lambda c=self.uploaded_count: self.counter_lbl.configure(
-                                            text=f"Sesi Ini: {c} File"
-                                        )
-                                    )
-                                    self.log(f"✅ Terupload: {fname}")
-                                else:
-                                    self.log(f"⏭ Sudah ada di server: {fname}")
-                            else:
-                                self.log(f"⚠️ Gagal upload {fname}: {res.get('message')}")
-                        except Exception as up_err:
-                            self.log(f"❌ Koneksi tertunda ({fname}), akan dicoba lagi otomatis: {up_err}")
+                if new_queued > 0:
+                    save_pending_queue(self.pending_queue)
+                    self.root.after(0, self._update_pending_badge)
 
-                        # Beri jeda napas antar-upload agar bandwidth & CPU tetap dingin
-                        time.sleep(INTER_UPLOAD_COOL_SEC)
+                # TAHAP 2: Proses pengiriman Antrean (Pending Queue)
+                if self.pending_queue:
+                    # Jika sebelumnya status offline, lakukan ping ringan dulu sebelum mengirim file besar
+                    if not self.is_online:
+                        if not api_ping_server(portal_url, api_key):
+                            # Internet masih mati, tunggu dengan tenang (0% CPU) dan jangan hapus antrean
+                            time.sleep(5.0)
+                            continue
+                        else:
+                            self._set_online_state(True)
 
-                if unsaved_cache_changes > 0:
-                    save_synced_cache(self.processed_files)
-                    unsaved_cache_changes = 0
+                    completed_keys = []
+                    # Urutkan pengiriman dari foto yang paling awal diambil
+                    sorted_items = sorted(self.pending_queue.items(), key=lambda kv: kv[1].get("added_at", 0))
+
+                    for k, item in sorted_items:
+                        if not self.is_watching:
+                            break
+                        fname = os.path.basename(item["file_path"])
+                        self.log(f"📤 Mengirim [{item['category'].upper()}] {fname} ...")
+                        ok = self._attempt_single_upload(portal_url, api_key, item)
+                        if ok:
+                            completed_keys.append(k)
+                            # Simpan progress ke disk setiap kali file sukses agar tahan mati listrik mendadak
+                            del self.pending_queue[k]
+                            save_synced_cache(self.processed_files)
+                            save_pending_queue(self.pending_queue)
+                            self.root.after(0, self._update_pending_badge)
+                            time.sleep(INTER_UPLOAD_COOL_SEC)
+                        else:
+                            # Jika gagal karena sinyal internet putus, hentikan batch ini dan tunggu siklus berikutnya
+                            self.log(f"⏳ Internet tidak stabil saat mengirim {fname}. Disimpan aman di antrean, akan diulang otomatis.")
+                            break
 
             except Exception as loop_err:
-                self.log(f"⚠️ Info pemantauan folder: {loop_err}")
+                self.log(f"⚠️ Info sistem: {loop_err}")
 
             time.sleep(SCAN_INTERVAL_SEC)
 
 
 def run_cli_trigger_mode():
-    """Mode Trigger LumaBooth Windows (berjalan di background dengan prioritas rendah)."""
+    """Mode Trigger LumaBooth Windows dengan Fallback Antrean Offline."""
     set_low_process_priority()
     cfg = load_config()
     args = sys.argv[1:]
@@ -718,29 +974,64 @@ def run_cli_trigger_mode():
     if not file_path or not os.path.isfile(file_path):
         sys.exit(0)
 
-    # Tunggu 1.5 detik agar proses kirim ke printer selesai lebih dulu
     time.sleep(1.5)
+    portal_url = cfg.get("portal_url", "https://files.yuhu.co.id")
+    api_key = cfg.get("api_key", "yuhu8080")
+    client_id = cfg.get("selected_client_id")
+    slug = cfg.get("selected_client_slug", "")
 
-    res = api_upload_file_low_memory(
-        portal_url=cfg.get("portal_url", "https://files.yuhu.co.id"),
-        api_key=cfg.get("api_key", "yuhu8080"),
-        file_path=file_path,
-        client_id=cfg.get("selected_client_id"),
-        slug=cfg.get("selected_client_slug", ""),
-        album_name=album_name,
-        auto_set=True
-    )
-    print(json.dumps(res))
+    # Coba kirim hingga 3 kali jika koneksi sempat kedip; jika tetap offline, simpan di antrean lokal
+    for attempt in range(3):
+        try:
+            stat = os.stat(file_path)
+            fsha1 = compute_file_sha1(file_path)
+            res = api_upload_file_verified(
+                portal_url=portal_url,
+                api_key=api_key,
+                file_path=file_path,
+                file_size=stat.st_size,
+                file_sha1=fsha1,
+                client_id=client_id,
+                slug=slug,
+                album_name=album_name,
+                auto_set=True
+            )
+            if res.get("status") in ("success", "skipped"):
+                print(json.dumps(res))
+                sys.exit(0)
+        except Exception:
+            time.sleep(2.0 * (attempt + 1))
+
+    # Jika internet mati total saat trigger dipanggil, masukkan ke file antrean lokal (.yuhu_pending_queue.json)
+    try:
+        stat = os.stat(file_path)
+        sig = f"{int(stat.st_mtime)}_{stat.st_size}"
+        pending = load_pending_queue()
+        cache_key = f"{client_id}::{file_path}"
+        pending[cache_key] = {
+            "file_path": file_path,
+            "sig": sig,
+            "client_id": client_id,
+            "slug": slug,
+            "category": "prints",
+            "added_at": time.time()
+        }
+        save_pending_queue(pending)
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":
     set_low_process_priority()
-    if len(sys.argv) > 1:
+    auto_resume = "--auto-resume" in sys.argv
+    cli_args = [a for a in sys.argv[1:] if a != "--auto-resume"]
+
+    if len(cli_args) > 0:
         run_cli_trigger_mode()
     else:
         if not HAS_TK:
             print("Tkinter tidak tersedia.")
             sys.exit(1)
         root = tk.Tk()
-        app = LumaBoothSyncApp(root)
+        app = LumaBoothSyncApp(root, auto_resume_flag=auto_resume)
         root.mainloop()

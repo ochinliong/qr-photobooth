@@ -43,7 +43,7 @@ $media_items = [];
 if (is_dir($folder_path)) {
     $files = scandir($folder_path);
     foreach ($files as $file) {
-        if ($file === '.' || $file === '..') continue;
+        if ($file === '.' || $file === '..' || strpos($file, '.part_') !== false) continue;
         $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
         if (in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'mov', 'webm'])) {
             $full_file = $folder_path . '/' . $file;

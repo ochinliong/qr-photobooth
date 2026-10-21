@@ -2,7 +2,7 @@
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization, X-API-KEY');
+header('Access-Control-Allow-Headers: Content-Type, Authorization, X-API-KEY, X-FILE-SHA1');
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
@@ -40,6 +40,18 @@ if ($req_key !== $API_SECRET_KEY) {
 $action = $_GET['action'] ?? ($_POST['action'] ?? 'list_events');
 
 // =========================================================================
+// 0. ACTION: ping (Health check cepat untuk deteksi internet/server pulih)
+// =========================================================================
+if ($action === 'ping') {
+    echo json_encode([
+        'status' => 'success',
+        'message' => 'pong',
+        'timestamp' => time()
+    ]);
+    exit;
+}
+
+// =========================================================================
 // 1. ACTION: list_events (Mengambil daftar event untuk aplikasi Windows)
 // =========================================================================
 if ($action === 'list_events') {
@@ -60,6 +72,7 @@ if ($action === 'list_events') {
         if (is_dir($local_dir)) {
             $files = scandir($local_dir);
             foreach ($files as $f) {
+                if (strpos($f, '.part_') !== false) continue; // Abaikan file temp
                 $ext = strtolower(pathinfo($f, PATHINFO_EXTENSION));
                 if (in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'mov', 'webm'])) {
                     $file_count++;
@@ -99,12 +112,14 @@ if ($action === 'list_events') {
 }
 
 // =========================================================================
-// 2. ACTION: upload (Menerima upload foto/GIF/MP4 dari LumaBooth Windows)
+// 2. ACTION: upload (Atomic & Checksum-Verified Upload dari LumaBooth)
 // =========================================================================
 if ($action === 'upload' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $client_id = $_POST['client_id'] ?? '';
     $slug      = $_POST['slug'] ?? '';
     $album     = $_POST['album_name'] ?? '';
+    $expected_sha1 = strtolower(trim($_POST['file_sha1'] ?? ($_SERVER['HTTP_X_FILE_SHA1'] ?? '')));
+    $expected_size = isset($_POST['file_size']) ? (int)$_POST['file_size'] : 0;
 
     $client = null;
     if (!empty($client_id)) {
@@ -116,7 +131,6 @@ if ($action === 'upload' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->execute([$slug]);
         $client = $stmt->fetch(PDO::FETCH_ASSOC);
     } elseif (!empty($album)) {
-        // Cari berdasarkan kecocokan nama event / album LumaBooth
         $clean_album = strtolower(preg_replace('/\s+/', '', $album));
         $stmt = $pdo->query("SELECT * FROM clients ORDER BY tanggal_event DESC, id DESC");
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $c) {
@@ -151,9 +165,33 @@ if ($action === 'upload' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         http_response_code(400);
         echo json_encode([
             'status' => 'error',
-            'message' => 'Upload error code: ' . $uploaded['error']
+            'message' => 'Upload terputus di tengah jalan (error code: ' . $uploaded['error'] . '). Akan diulang otomatis.'
         ]);
         exit;
+    }
+
+    // Validasi ukuran file (mencegah file terpotong saat internet putus tiba-tiba)
+    $actual_tmp_size = @filesize($uploaded['tmp_name']);
+    if ($expected_size > 0 && $actual_tmp_size !== $expected_size) {
+        http_response_code(422);
+        echo json_encode([
+            'status' => 'error',
+            'message' => "Ukuran file tidak utuh ($actual_tmp_size vs $expected_size bytes). Kemungkinan koneksi terputus."
+        ]);
+        exit;
+    }
+
+    // Validasi integritas SHA-1 (100% memastikan foto tidak korup/rusak separuh)
+    if (!empty($expected_sha1)) {
+        $actual_sha1 = strtolower(@sha1_file($uploaded['tmp_name']));
+        if ($actual_sha1 !== $expected_sha1) {
+            http_response_code(422);
+            echo json_encode([
+                'status' => 'error',
+                'message' => 'Checksum SHA-1 tidak cocok (file korup saat transmisi). Akan diupload ulang.'
+            ]);
+            exit;
+        }
     }
 
     $orig_name = basename($uploaded['name']);
@@ -176,47 +214,69 @@ if ($action === 'upload' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         mkdir($target_dir, 0777, true);
     }
 
-    // Bersihkan nama file agar aman di URL namun tetap menjaga urutan LumaBooth
     $safe_basename = preg_replace('/[^A-Za-z0-9_\-\.]/', '_', $orig_name);
-    // Opsional: subfolder tipe file jika dikirim dari LumaBooth (prints, gifs, videos, originals)
     $media_category = isset($_POST['category']) ? preg_replace('/[^a-z0-9_]/', '', strtolower($_POST['category'])) : '';
     if (!empty($media_category) && in_array($media_category, ['prints', 'gifs', 'videos', 'originals'])) {
-        $safe_basename = $media_category . '_' . $safe_basename;
+        if (strpos($safe_basename, $media_category . '_') !== 0) {
+            $safe_basename = $media_category . '_' . $safe_basename;
+        }
     }
 
     $target_path = $target_dir . '/' . $safe_basename;
 
-    // Jika mode overwrite=0 dan file sudah ada dengan ukuran sama, lewati
-    if (file_exists($target_path) && filesize($target_path) === $uploaded['size']) {
-        $year = date('Y', strtotime($client['tanggal_event']));
-        $clean_name = preg_replace('/\s+/', '', $client['nama_client']);
-        $direct_link = rtrim($base_url, '/') . '/' . $year . '/' . $clean_name;
+    // Jika file sudah ada di server dan ukurannya + SHA1-nya identik, langsung nyatakan sukses (idempotent)
+    if (file_exists($target_path)) {
+        $existing_size = @filesize($target_path);
+        $same_file = ($existing_size === $actual_tmp_size);
+        if ($same_file && !empty($expected_sha1)) {
+            $same_file = (strtolower(@sha1_file($target_path)) === $expected_sha1);
+        }
+        if ($same_file) {
+            $year = date('Y', strtotime($client['tanggal_event']));
+            $clean_name = preg_replace('/\s+/', '', $client['nama_client']);
+            $direct_link = rtrim($base_url, '/') . '/' . $year . '/' . $clean_name;
 
-        echo json_encode([
-            'status' => 'skipped',
-            'message' => 'File sudah ada di server.',
-            'file_name' => $safe_basename,
-            'file_url' => rtrim($base_url, '/') . '/' . $rel_folder . '/' . rawurlencode($safe_basename),
-            'direct_link' => $direct_link
-        ]);
-        exit;
+            echo json_encode([
+                'status' => 'skipped',
+                'message' => 'File utuh sudah ada di server.',
+                'file_name' => $safe_basename,
+                'file_sha1' => $expected_sha1,
+                'file_url' => rtrim($base_url, '/') . '/' . $rel_folder . '/' . rawurlencode($safe_basename),
+                'direct_link' => $direct_link
+            ]);
+            exit;
+        }
     }
 
-    if (!move_uploaded_file($uploaded['tmp_name'], $target_path)) {
+    // Atomic Write: pindahkan ke file .part sementara dulu, baru rename ke nama asli
+    // supaya galeri klien tidak pernah menampilkan gambar yang sedang setengah ditulis
+    $temp_target = $target_path . '.part_' . uniqid();
+    if (!move_uploaded_file($uploaded['tmp_name'], $temp_target)) {
+        @unlink($temp_target);
         http_response_code(500);
         echo json_encode([
             'status' => 'error',
-            'message' => 'Gagal menyimpan file di server. Periksa permission folder uploads/.'
+            'message' => 'Gagal menyimpan file sementara di server.'
         ]);
         exit;
     }
 
-    // Jika folder_foto_path klien masih kosong atau mengarah ke luar tapi admin ingin otomatis menggunakan galeri internal,
-    // atau jika auto_set_gallery=1 dikirim dari aplikasi sync:
+    if (!@rename($temp_target, $target_path)) {
+        if (!@copy($temp_target, $target_path)) {
+            @unlink($temp_target);
+            http_response_code(500);
+            echo json_encode([
+                'status' => 'error',
+                'message' => 'Gagal memfinalisasi file di server.'
+            ]);
+            exit;
+        }
+        @unlink($temp_target);
+    }
+
     $auto_set = $_POST['auto_set_gallery'] ?? '1';
     if ($auto_set === '1') {
         $current_path = trim($client['folder_foto_path']);
-        // Jika masih kosong, placeholder, atau sudah mengarah ke uploads/ atau client/, pastikan menunjuk ke folder galeri ini
         if (empty($current_path) || strpos($current_path, 'uploads/gallery/') === 0 || $current_path === '#') {
             $upd = $pdo->prepare("UPDATE clients SET folder_foto_path = ? WHERE id = ?");
             $upd->execute([$rel_folder, $client['id']]);
@@ -230,10 +290,11 @@ if ($action === 'upload' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
     echo json_encode([
         'status' => 'success',
-        'message' => 'File berhasil diupload ke Portal Gallery.',
+        'message' => 'File berhasil diupload dan terverifikasi utuh.',
         'client_name' => $client['nama_client'],
         'slug' => $client['slug'],
         'file_name' => $safe_basename,
+        'file_sha1' => $expected_sha1,
         'file_url' => rtrim($base_url, '/') . '/' . $rel_folder . '/' . rawurlencode($safe_basename),
         'single_photo_url' => $single_view_url,
         'gallery_url' => rtrim($base_url, '/') . '/client/?c=' . urlencode($client['slug']),
