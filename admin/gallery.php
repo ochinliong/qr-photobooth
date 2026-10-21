@@ -322,7 +322,7 @@ $current_title = $selected_event ? $selected_event['nama_client'] : '';
 $current_subtitle = ($selected_event && !empty($selected_event['lokasi']) && $selected_event['lokasi'] !== '-')
     ? str_replace(["\r\n", "\n"], ' • ', $selected_event['lokasi'])
     : "Terima kasih telah merayakan bersama kami!";
-$current_visible = ['Prints', 'Singles', 'Animated', 'Videos'];
+$current_visible = ['Prints', 'Animated'];
 $current_hidden = [];
 
 if ($selected_folder !== '') {

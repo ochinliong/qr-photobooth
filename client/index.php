@@ -67,7 +67,7 @@ if ($db_client && !empty(trim($db_client['lokasi'] ?? '')) && trim($db_client['l
     $display_subtitle = str_replace(["\r\n", "\n"], ' • ', $db_client['lokasi']);
 }
 $display_tab_title = "Galeri - " . $display_title;
-$visible_folders = ['Prints', 'Singles', 'Animated', 'Videos'];
+$visible_folders = ['Prints', 'Animated'];
 $hidden_files = [];
 
 $config_path = $target_dir . '/config.json';
