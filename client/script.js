@@ -286,3 +286,151 @@ document.addEventListener('keydown', function(event) {
         changeSlide(-1);
     }
 });
+
+/* ==========================================================================
+   VISUAL SEARCH (PILIHAN 1: PENCARIAN DARI HASIL CETAK FISIK)
+   ========================================================================== */
+const visualModal = document.getElementById('visualSearchModal');
+const stepInit = document.getElementById('visualSearchStepInit');
+const stepLoading = document.getElementById('visualSearchStepLoading');
+const stepSuccess = document.getElementById('visualSearchStepSuccess');
+const stepFail = document.getElementById('visualSearchStepFail');
+let matchedSessionIdx = null;
+
+function openVisualSearchModal() {
+    if (!visualModal) return;
+    resetVisualSearch();
+    visualModal.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+}
+
+function closeVisualSearchModal() {
+    if (!visualModal) return;
+    visualModal.style.display = 'none';
+    if (!modal.classList.contains('active')) {
+        document.body.style.overflow = 'auto';
+    }
+}
+
+function resetVisualSearch() {
+    if (stepInit) stepInit.style.display = 'block';
+    if (stepLoading) stepLoading.style.display = 'none';
+    if (stepSuccess) stepSuccess.style.display = 'none';
+    if (stepFail) stepFail.style.display = 'none';
+    const camInput = document.getElementById('visualCameraInput');
+    const galInput = document.getElementById('visualGalleryInput');
+    if (camInput) camInput.value = '';
+    if (galInput) galInput.value = '';
+}
+
+async function handleVisualSearchFile(input) {
+    if (!input.files || !input.files[0]) return;
+    const file = input.files[0];
+
+    // Tampilkan pratinjau foto yang diambil tamu dan mulai animasi laser
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const preview = document.getElementById('visualPreviewImg');
+        if (preview) preview.src = e.target.result;
+
+        stepInit.style.display = 'none';
+        stepLoading.style.display = 'block';
+        stepSuccess.style.display = 'none';
+        stepFail.style.display = 'none';
+
+        executeVisualSearch(file);
+    };
+    reader.readAsDataURL(file);
+}
+
+async function executeVisualSearch(file) {
+    const urlParams = new URLSearchParams(window.location.search);
+    const clientParam = urlParams.get('client') || urlParams.get('c') || '';
+
+    const formData = new FormData();
+    formData.append('photo', file);
+    formData.append('client', clientParam);
+
+    try {
+        const response = await fetch('search_print.php', {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+        stepLoading.style.display = 'none';
+
+        if (data && data.success && data.match_found && data.best_match) {
+            // Berhasil Ditemukan!
+            const match = data.best_match;
+            const resultImg = document.getElementById('matchResultImg');
+            const scoreText = document.getElementById('matchScoreText');
+            const downloadBtn = document.getElementById('btnDownloadMatchedFile');
+            const openSessionBtn = document.getElementById('btnOpenMatchedSession');
+
+            if (resultImg) resultImg.src = match.path;
+            if (scoreText) scoreText.innerText = `Tingkat Kemiripan: ${match.score}%`;
+            if (downloadBtn) {
+                downloadBtn.href = match.path;
+                downloadBtn.setAttribute('download', match.file.split('/').pop());
+            }
+
+            // Cari index sesi di galeri lokal
+            matchedSessionIdx = -1;
+            if (typeof gallerySessions !== 'undefined' && Array.isArray(gallerySessions)) {
+                for (let i = 0; i < gallerySessions.length; i++) {
+                    const sess = gallerySessions[i];
+                    const found = sess.files.some(f => 
+                        f.path === match.path || 
+                        f.file === match.file || 
+                        (match.base_id && (f.file.includes(match.base_id) || sess.id.includes(match.base_id)))
+                    );
+                    if (found) {
+                        matchedSessionIdx = i;
+                        break;
+                    }
+                }
+            }
+
+            if (openSessionBtn) {
+                if (matchedSessionIdx >= 0) {
+                    openSessionBtn.style.display = 'flex';
+                    openSessionBtn.onclick = function() {
+                        closeVisualSearchModal();
+                        // Scroll halus ke kartu sesi tersebut di grid
+                        const gridItems = document.querySelectorAll('.grid-item');
+                        if (gridItems[matchedSessionIdx]) {
+                            gridItems[matchedSessionIdx].scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }
+                        openSession(matchedSessionIdx);
+                    };
+                } else {
+                    openSessionBtn.style.display = 'none';
+                }
+            }
+
+            stepSuccess.style.display = 'block';
+        } else {
+            // Belum Menemukan Kecocokan
+            const failMsg = document.getElementById('matchFailMsg');
+            if (failMsg && data && data.message) {
+                failMsg.innerText = data.message;
+            }
+            stepFail.style.display = 'block';
+        }
+    } catch (err) {
+        stepLoading.style.display = 'none';
+        const failMsg = document.getElementById('matchFailMsg');
+        if (failMsg) {
+            failMsg.innerText = 'Terjadi gangguan jaringan saat memindai foto. Silahkan coba lagi.';
+        }
+        stepFail.style.display = 'block';
+    }
+}
+
+// Tutup modal jika klik di luar card
+window.addEventListener('click', function(e) {
+    if (e.target === visualModal) {
+        closeVisualSearchModal();
+    }
+});

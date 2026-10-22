@@ -331,6 +331,15 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
             <div id="zipStatusMsg" class="vip-status-msg" style="display:none;"></div>
         </div>
         <?php endif; ?>
+
+        <!-- Tombol Pencarian Visual dari Foto Cetak Fisik -->
+        <div class="visual-search-banner">
+            <button type="button" onclick="openVisualSearchModal()" class="btn-visual-search">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                <span>Cari Foto dari Hasil Cetak</span>
+            </button>
+            <p class="visual-search-subtext">Punya cetakan fisik? Foto cetakanmu untuk menemukan softfile & video aslinya!</p>
+        </div>
     </header>
 
     <main class="gallery-container">
@@ -377,6 +386,94 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
                 </div>
                 <div class="slide-indicator" id="slideIndicator">1 / 1</div>
             </div>
+        </div>
+    </div>
+
+    <!-- Modal Pencarian Visual dari Cetakan Fisik -->
+    <div id="visualSearchModal" class="visual-modal-overlay" style="display:none;">
+        <div class="visual-modal-card">
+            <button type="button" class="visual-modal-close" onclick="closeVisualSearchModal()">&times;</button>
+            
+            <!-- Step 1: Inisiasi Pilihan Input Foto -->
+            <div id="visualSearchStepInit" class="visual-search-step">
+                <div class="visual-search-header">
+                    <div class="visual-icon-badge">📸</div>
+                    <h3>Cari Foto dari Cetakan Fisik</h3>
+                    <p>Sistem akan memindai foto cetakan photobooth Anda dan mencari softfile aslinya secara otomatis tanpa barcode.</p>
+                </div>
+
+                <div class="visual-search-tips">
+                    <div class="tip-item"><span>📐</span> Pegang cetakan tegak lurus</div>
+                    <div class="tip-item"><span>💡</span> Hindari pantulan kilau lampu</div>
+                    <div class="tip-item"><span>🔍</span> Usahakan cetakan memenuhi layar</div>
+                </div>
+
+                <input type="file" id="visualCameraInput" accept="image/*" capture="environment" style="display:none;" onchange="handleVisualSearchFile(this)">
+                <input type="file" id="visualGalleryInput" accept="image/*" style="display:none;" onchange="handleVisualSearchFile(this)">
+
+                <div class="visual-action-buttons">
+                    <button type="button" onclick="document.getElementById('visualCameraInput').click()" class="btn-visual-action btn-camera">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                        Ambil Foto dengan Kamera
+                    </button>
+                    <button type="button" onclick="document.getElementById('visualGalleryInput').click()" class="btn-visual-action btn-gallery">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                        Pilih dari Galeri HP
+                    </button>
+                </div>
+            </div>
+
+            <!-- Step 2: Sedang Menganalisis / Scanning -->
+            <div id="visualSearchStepLoading" class="visual-search-step" style="display:none;">
+                <div class="scanning-preview-container">
+                    <img id="visualPreviewImg" src="" alt="Preview Cetakan">
+                    <div class="scanning-laser"></div>
+                </div>
+                <div class="scanning-text">
+                    <div class="visual-spinner"></div>
+                    <h4>Sedang Mencocokkan Foto...</h4>
+                    <p>Menganalisis kontur visual dan mencari di seluruh galeri acara</p>
+                </div>
+            </div>
+
+            <!-- Step 3: Hasil Berhasil Ditemukan -->
+            <div id="visualSearchStepSuccess" class="visual-search-step" style="display:none;">
+                <div class="match-success-badge">🎉 Foto Berhasil Ditemukan!</div>
+                <div class="match-score-badge" id="matchScoreText">Tingkat Kemiripan 94%</div>
+                
+                <div class="match-result-preview">
+                    <img id="matchResultImg" src="" alt="Foto Ditemukan">
+                </div>
+
+                <div class="visual-action-buttons">
+                    <button type="button" id="btnOpenMatchedSession" class="btn-visual-action btn-camera">
+                        ✨ Buka Sesi Lengkap (Foto & Video)
+                    </button>
+                    <a id="btnDownloadMatchedFile" href="#" download class="btn-visual-action btn-gallery" style="text-align:center; text-decoration:none;">
+                        ⬇️ Download Foto Ini
+                    </a>
+                    <button type="button" onclick="resetVisualSearch()" class="btn-visual-text">
+                        Cari Cetakan Lain
+                    </button>
+                </div>
+            </div>
+
+            <!-- Step 4: Tidak Ditemukan / Coba Lagi -->
+            <div id="visualSearchStepFail" class="visual-search-step" style="display:none;">
+                <div class="match-fail-badge">⚠️ Belum Menemukan Foto yang Cocok</div>
+                <p class="match-fail-desc" id="matchFailMsg">
+                    Kemungkinan foto cetakan kurang terang atau terpotong. Silahkan coba foto ulang dengan pencahayaan yang cukup.
+                </p>
+                <div class="visual-action-buttons">
+                    <button type="button" onclick="resetVisualSearch()" class="btn-visual-action btn-camera">
+                        📸 Coba Foto Ulang
+                    </button>
+                    <button type="button" onclick="closeVisualSearchModal()" class="btn-visual-text">
+                        Tutup & Cari Manual di Galeri
+                    </button>
+                </div>
+            </div>
+
         </div>
     </div>
 
