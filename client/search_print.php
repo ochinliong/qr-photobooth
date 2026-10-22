@@ -1,21 +1,20 @@
 <?php
 /**
  * ============================================================================
- * YUHU PHOTOBOOTH - SMART VISUAL IMAGE SEARCH ENGINE (PILIHAN 1)
+ * YUHU PHOTOBOOTH - SMART VISUAL IMAGE SEARCH ENGINE (v2.0 REVISED)
  * ============================================================================
- * Mencocokkan foto cetakan fisik yang difoto oleh tamu dengan master file
- * digital di server TANPA KODE / BARCODE, 100% mandiri di cPanel (PHP + GD).
- *
- * Menggunakan kombinasi:
- * 1. 64-bit Difference Hash (dHash) untuk mendeteksi kontur & gradien visual.
- * 2. 32-Zone Multi-Band Color & Luminance Signature untuk mencocokkan layout warna pose.
- * 3. Auto-cache (.search_cache.json) untuk pencocokan instan (< 20 milidetik).
+ * Fitur pencarian foto visual canggih tanpa barcode:
+ * 1. Multi-Aspect Crop Engine (menguji Full, Center Strip 1:3, Center 2:3, Inner 80%
+ *    untuk membuang background meja/tangan secara otomatis).
+ * 2. 64-bit Difference Hash (dHash) + 32-Zone Color & Luminance Signature.
+ * 3. Smart Lighting Compensation (tahan terhadap bayangan/lampu redup).
+ * 4. Fuzzy Session Finder & Top-3 Candidates Card (selalu menyajikan hasil terbaik).
  * ============================================================================
  */
 
 header('Content-Type: application/json; charset=utf-8');
 header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
-@set_time_limit(60);
+@set_time_limit(90);
 
 require_once '../config.php';
 if (session_status() === PHP_SESSION_ACTIVE) {
@@ -91,7 +90,7 @@ if (!$queryImg) {
     exit;
 }
 
-// Tangani orientasi EXIF (Kamera iPhone sering menyertakan tag EXIF orientation)
+// Tangani orientasi EXIF (Kamera HP sering menyertakan tag EXIF orientation)
 if (function_exists('exif_read_data')) {
     $exif = @exif_read_data('data://image/jpeg;base64,' . base64_encode($rawImageData));
     if ($exif && !empty($exif['Orientation'])) {
@@ -110,7 +109,7 @@ if (function_exists('exif_read_data')) {
 }
 
 // ============================================================================
-// FUNGSI-FUNGSI ALGORITMA VISUAL MATCHING
+// FUNGSI-FUNGSI SIGNATURE & MULTI-CROP ENGINE
 // ============================================================================
 
 /**
@@ -142,9 +141,6 @@ function computeDHash($srcImg) {
     return $hash;
 }
 
-/**
- * Menghitung Jarak Hamming antara 2 hash 64-bit (0 = identik, 64 = berbeda total)
- */
 function hammingDistance($hash1, $hash2) {
     $dist = 0;
     $len = min(strlen($hash1), strlen($hash2));
@@ -156,7 +152,6 @@ function hammingDistance($hash1, $hash2) {
 
 /**
  * 2. Multi-Zone Block Color Signature (4 kolom x 8 baris = 32 blok)
- * Khusus mengenali tata letak & palet warna pose cetakan photobooth
  */
 function computeGridSignature($srcImg, $cols = 4, $rows = 8) {
     $w = imagesx($srcImg);
@@ -205,8 +200,6 @@ function compareGridSignatures($sig1, $sig2) {
     if (empty($sig1) || empty($sig2) || count($sig1) !== count($sig2)) return 0;
 
     $n = count($sig1);
-    
-    // Hitung rata-rata selisih kecerahan untuk kompensasi pencahayaan ruangan tamu
     $lumDiffSum = 0;
     for ($i = 0; $i < $n; $i++) {
         $lumDiffSum += ($sig1[$i][3] - $sig2[$i][3]);
@@ -225,18 +218,89 @@ function compareGridSignatures($sig1, $sig2) {
     }
 
     $avgDiff = $totalDiff / $n;
-    return max(0, min(1, 1 - ($avgDiff / 95)));
+    return max(0, min(1, 1 - ($avgDiff / 85)));
 }
 
-// 4. Hitung Signature Foto Query Tamu
-$queryDHash = computeDHash($queryImg);
-$queryGrid = computeGridSignature($queryImg);
+/**
+ * Multi-Crop Generator: Menghasilkan beberapa variasi crop query image
+ * (Full, Center 1:3 Strip, Center 2:3 Postcard, dan Center Inner 80%)
+ * untuk membuang background meja/tangan tamu secara otomatis!
+ */
+function generateQueryVariations($img) {
+    $w = imagesx($img);
+    $h = imagesy($img);
+    $images = [$img];
+
+    if ($h > $w) {
+        // 1. Center Crop 1:3 (Strip Photobooth)
+        $stripW = (int)($h / 2.9);
+        if ($stripW < $w && $stripW > 40) {
+            $c1 = imagecrop($img, [
+                'x' => (int)(($w - $stripW) / 2),
+                'y' => 0,
+                'width' => $stripW,
+                'height' => $h
+            ]);
+            if ($c1) $images[] = $c1;
+        }
+
+        // 2. Center Crop 2:3 (Postcard 4x6)
+        $cardW = (int)($h * 2 / 3);
+        if ($cardW < $w && $cardW > 40) {
+            $c2 = imagecrop($img, [
+                'x' => (int)(($w - $cardW) / 2),
+                'y' => 0,
+                'width' => $cardW,
+                'height' => $h
+            ]);
+            if ($c2) $images[] = $c2;
+        }
+
+        // 3. Center Inner 80% (Menghilangkan margin meja dan jari pemegang foto)
+        $inW = (int)($w * 0.82);
+        $inH = (int)($h * 0.82);
+        $c3 = imagecrop($img, [
+            'x' => (int)($w * 0.09),
+            'y' => (int)($h * 0.09),
+            'width' => $inW,
+            'height' => $inH
+        ]);
+        if ($c3) $images[] = $c3;
+    } else {
+        // Horizontal orientation
+        $cardH = (int)($w * 2 / 3);
+        if ($cardH < $h && $cardH > 40) {
+            $c1 = imagecrop($img, [
+                'x' => 0,
+                'y' => (int)(($h - $cardH) / 2),
+                'width' => $w,
+                'height' => $cardH
+            ]);
+            if ($c1) $images[] = $c1;
+        }
+    }
+
+    $signatures = [];
+    foreach ($images as $im) {
+        $signatures[] = [
+            'dhash' => computeDHash($im),
+            'grid'  => computeGridSignature($im)
+        ];
+        if ($im !== $img) {
+            imagedestroy($im);
+        }
+    }
+    return $signatures;
+}
+
+// 4. Hitung Signature untuk semua variasi foto tamu
+$querySignatures = generateQueryVariations($queryImg);
 imagedestroy($queryImg);
 
 // ============================================================================
 // 5. AMBIL ATAU BANGUN CACHE SIGNATURE UNTUK MASTER PRINT EVENT
 // ============================================================================
-$cacheFile = $target_dir . '/.search_cache.json';
+$cacheFile = $target_dir . '/.search_cache_v2.json';
 $candidateSignatures = [];
 $needRebuild = true;
 
@@ -259,7 +323,7 @@ foreach ($iterator as $item) {
                 continue;
             }
 
-            // Prioritaskan file di folder Prints / print, atau file berformat strip
+            // Prioritaskan file di folder Prints / print
             $isPrint = (strpos($pathLower, 'prints/') !== false || strpos($pathLower, 'print') !== false);
             $candidateFiles[] = [
                 'rel_path' => $relPath,
@@ -276,9 +340,10 @@ usort($candidateFiles, function($a, $b) {
     return ($b['is_print'] ? 1 : 0) - ($a['is_print'] ? 1 : 0);
 });
 
-// Cek apakah cache masih valid
+// Cek apakah cache v2 masih valid
 if (file_exists($cacheFile)) {
-    $cached = @json_decode(@file_put_contents ? @file_get_contents($cacheFile) : '', true);
+    $cacheContent = @file_get_contents($cacheFile);
+    $cached = $cacheContent ? @json_decode($cacheContent, true) : null;
     if (is_array($cached) && isset($cached['count']) && $cached['count'] === count($candidateFiles)) {
         $candidateSignatures = $cached['signatures'] ?? [];
         $needRebuild = false;
@@ -288,7 +353,9 @@ if (file_exists($cacheFile)) {
 if ($needRebuild || empty($candidateSignatures)) {
     $candidateSignatures = [];
     foreach ($candidateFiles as $cand) {
-        $img = @imagecreatefromstring(@file_get_contents($cand['full_path']));
+        $candBytes = @file_get_contents($cand['full_path']);
+        if (!$candBytes) continue;
+        $img = @imagecreatefromstring($candBytes);
         if ($img) {
             $candidateSignatures[] = [
                 'file' => $cand['rel_path'],
@@ -317,20 +384,28 @@ if (empty($candidateSignatures)) {
 }
 
 // ============================================================================
-// 6. PENCOCOKAN DENGAN SELURUH MASTER PRINT
+// 6. PENCOCOKAN MULTI-VARIASI DENGAN SELURUH MASTER PRINT
 // ============================================================================
 $results = [];
 foreach ($candidateSignatures as $cand) {
-    $hamming = hammingDistance($queryDHash, $cand['dhash']);
-    $dhashScore = max(0, (64 - $hamming) / 64);
-    $gridScore = compareGridSignatures($queryGrid, $cand['grid']);
+    $bestScoreForCand = 0;
 
-    // Bobot: 35% dHash gradient + 65% Grid Color distribution
-    $totalScore = round(($dhashScore * 0.35 + $gridScore * 0.65) * 100, 1);
+    // Uji candidate terhadap semua variasi crop foto tamu (ambil skor tertinggi)
+    foreach ($querySignatures as $qSig) {
+        $hamming = hammingDistance($qSig['dhash'], $cand['dhash']);
+        $dhashScore = max(0, (64 - $hamming) / 64);
+        $gridScore = compareGridSignatures($qSig['grid'], $cand['grid']);
 
-    // Bonus jika memang dari folder Prints resmi
+        // Bobot: 35% dHash + 65% Grid Color
+        $score = round(($dhashScore * 0.35 + $gridScore * 0.65) * 100, 1);
+        if ($score > $bestScoreForCand) {
+            $bestScoreForCand = $score;
+        }
+    }
+
+    // Sedikit bonus jika memang file dari folder Prints resmi
     if (!empty($cand['is_print'])) {
-        $totalScore = min(100, $totalScore + 2);
+        $bestScoreForCand = min(100, $bestScoreForCand + 3);
     }
 
     $encodedClient = rawurlencode($resolved_folder);
@@ -348,7 +423,7 @@ foreach ($candidateSignatures as $cand) {
         'file' => $cand['file'],
         'path' => 'photos/' . $encodedClient . '/' . $encodedPath,
         'base_id' => $baseId,
-        'score' => $totalScore
+        'score' => $bestScoreForCand
     ];
 }
 
@@ -358,14 +433,19 @@ usort($results, function($a, $b) {
 });
 
 $bestMatch = $results[0] ?? null;
-// Ambang batas kecocokan minimum (Confidence Threshold: >= 60%)
-$isConfidentMatch = ($bestMatch && $bestMatch['score'] >= 58.0);
+
+// Ambang Batas Fleksibel:
+// 1. High Confidence: >= 52% (Pasti Cocok)
+// 2. Medium Confidence: >= 38% (Kemungkinan Besar Cocok / Kandidat Terbaik)
+$isHighMatch = ($bestMatch && $bestMatch['score'] >= 52.0);
+$isPossibleMatch = ($bestMatch && $bestMatch['score'] >= 38.0);
 
 echo json_encode([
     'success' => true,
-    'match_found' => $isConfidentMatch,
-    'best_match' => $isConfidentMatch ? $bestMatch : null,
+    'match_found' => ($isHighMatch || $isPossibleMatch),
+    'confidence_level' => $isHighMatch ? 'high' : ($isPossibleMatch ? 'medium' : 'low'),
+    'best_match' => $bestMatch,
     'highest_score' => $bestMatch ? $bestMatch['score'] : 0,
-    'top_candidates' => array_slice($results, 0, 3)
+    'top_candidates' => array_slice($results, 0, 4)
 ]);
 exit;

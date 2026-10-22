@@ -317,10 +317,65 @@ function resetVisualSearch() {
     if (stepLoading) stepLoading.style.display = 'none';
     if (stepSuccess) stepSuccess.style.display = 'none';
     if (stepFail) stepFail.style.display = 'none';
+    const topList = document.getElementById('topCandidatesList');
+    if (topList) topList.innerHTML = '';
+    const fallbackList = document.getElementById('fallbackCandidatesList');
+    if (fallbackList) fallbackList.innerHTML = '';
+    const topCont = document.getElementById('topCandidatesContainer');
+    if (topCont) topCont.style.display = 'none';
     const camInput = document.getElementById('visualCameraInput');
     const galInput = document.getElementById('visualGalleryInput');
     if (camInput) camInput.value = '';
     if (galInput) galInput.value = '';
+}
+
+function findSessionIndex(candidate) {
+    if (!candidate || typeof gallerySessions === 'undefined' || !Array.isArray(gallerySessions)) return -1;
+    for (let i = 0; i < gallerySessions.length; i++) {
+        const sess = gallerySessions[i];
+        const found = sess.files.some(f => 
+            f.path === candidate.path || 
+            f.file === candidate.file || 
+            (candidate.base_id && (f.file.includes(candidate.base_id) || sess.id.includes(candidate.base_id)))
+        );
+        if (found) return i;
+    }
+    return -1;
+}
+
+function selectCandidate(candidate) {
+    const idx = findSessionIndex(candidate);
+    closeVisualSearchModal();
+    if (idx >= 0) {
+        const gridItems = document.querySelectorAll('.grid-item');
+        if (gridItems[idx]) {
+            gridItems[idx].scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        openSession(idx);
+    } else if (candidate && candidate.path) {
+        window.open(candidate.path, '_blank');
+    }
+}
+
+function renderCandidatesList(containerElement, candidates, excludePath) {
+    if (!containerElement) return 0;
+    containerElement.innerHTML = '';
+    const filtered = (candidates || []).filter(c => c && c.path && c.path !== excludePath);
+    if (filtered.length === 0) return 0;
+
+    filtered.forEach(cand => {
+        const card = document.createElement('div');
+        card.className = 'candidate-card';
+        card.title = 'Ketuk untuk membuka sesi foto ini';
+        card.innerHTML = `
+            <img src="${cand.path}" alt="Kandidat Foto" loading="lazy">
+            <span class="candidate-score">${cand.score}% Mirip</span>
+            <span class="candidate-label">Ketuk utk Buka</span>
+        `;
+        card.addEventListener('click', () => selectCandidate(cand));
+        containerElement.appendChild(card);
+    });
+    return filtered.length;
 }
 
 async function handleVisualSearchFile(input) {
@@ -361,12 +416,21 @@ async function executeVisualSearch(file) {
         stepLoading.style.display = 'none';
 
         if (data && data.success && data.match_found && data.best_match) {
-            // Berhasil Ditemukan!
+            // Berhasil Ditemukan! (Tingkat Tinggi atau Menengah)
             const match = data.best_match;
+            const badgeTitle = document.getElementById('matchBadgeTitle');
             const resultImg = document.getElementById('matchResultImg');
             const scoreText = document.getElementById('matchScoreText');
             const downloadBtn = document.getElementById('btnDownloadMatchedFile');
             const openSessionBtn = document.getElementById('btnOpenMatchedSession');
+
+            if (badgeTitle) {
+                if (data.confidence_level === 'high') {
+                    badgeTitle.innerText = '🎉 Foto Berhasil Ditemukan!';
+                } else {
+                    badgeTitle.innerText = '✨ Kandidat Paling Cocok Ditemukan';
+                }
+            }
 
             if (resultImg) resultImg.src = match.path;
             if (scoreText) scoreText.innerText = `Tingkat Kemiripan: ${match.score}%`;
@@ -375,55 +439,60 @@ async function executeVisualSearch(file) {
                 downloadBtn.setAttribute('download', match.file.split('/').pop());
             }
 
-            // Cari index sesi di galeri lokal
-            matchedSessionIdx = -1;
-            if (typeof gallerySessions !== 'undefined' && Array.isArray(gallerySessions)) {
-                for (let i = 0; i < gallerySessions.length; i++) {
-                    const sess = gallerySessions[i];
-                    const found = sess.files.some(f => 
-                        f.path === match.path || 
-                        f.file === match.file || 
-                        (match.base_id && (f.file.includes(match.base_id) || sess.id.includes(match.base_id)))
-                    );
-                    if (found) {
-                        matchedSessionIdx = i;
-                        break;
-                    }
-                }
-            }
+            matchedSessionIdx = findSessionIndex(match);
 
             if (openSessionBtn) {
                 if (matchedSessionIdx >= 0) {
                     openSessionBtn.style.display = 'flex';
                     openSessionBtn.onclick = function() {
-                        closeVisualSearchModal();
-                        // Scroll halus ke kartu sesi tersebut di grid
-                        const gridItems = document.querySelectorAll('.grid-item');
-                        if (gridItems[matchedSessionIdx]) {
-                            gridItems[matchedSessionIdx].scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        }
-                        openSession(matchedSessionIdx);
+                        selectCandidate(match);
                     };
                 } else {
                     openSessionBtn.style.display = 'none';
                 }
             }
 
+            // Tampilkan alternatif kandidat lain di bawah foto utama jika ada
+            const topCandidatesList = document.getElementById('topCandidatesList');
+            const topCandidatesCont = document.getElementById('topCandidatesContainer');
+            if (topCandidatesList && topCandidatesCont) {
+                const count = renderCandidatesList(topCandidatesList, data.top_candidates, match.path);
+                topCandidatesCont.style.display = count > 0 ? 'block' : 'none';
+            }
+
             stepSuccess.style.display = 'block';
         } else {
-            // Belum Menemukan Kecocokan
+            // Belum Menemukan Kecocokan Pasti -> Tampilkan Kandidat Terdekat jika ada
+            const failBadge = document.querySelector('#visualSearchStepFail .match-fail-badge');
             const failMsg = document.getElementById('matchFailMsg');
-            if (failMsg && data && data.message) {
-                failMsg.innerText = data.message;
+            const fallbackList = document.getElementById('fallbackCandidatesList');
+
+            if (data && data.top_candidates && data.top_candidates.length > 0) {
+                if (failBadge) failBadge.innerText = '🔍 Ditemukan Beberapa Foto Terdekat:';
+                if (failMsg) failMsg.innerText = 'Kemiripan sedikit di bawah standar, namun sistem menemukan foto terdekat. Silahkan ketuk foto Anda jika sesuai:';
+                renderCandidatesList(fallbackList, data.top_candidates, '');
+                if (fallbackList) fallbackList.style.display = 'grid';
+            } else {
+                if (failBadge) failBadge.innerText = '❌ Belum Menemukan Foto yang Cocok';
+                if (failMsg) failMsg.innerText = (data && data.message) ? data.message : 'Pastikan foto cetakan diambil tegak lurus dan pencahayaan cukup.';
+                if (fallbackList) {
+                    fallbackList.innerHTML = '';
+                    fallbackList.style.display = 'none';
+                }
             }
+
             stepFail.style.display = 'block';
         }
     } catch (err) {
         stepLoading.style.display = 'none';
+        const failBadge = document.querySelector('#visualSearchStepFail .match-fail-badge');
         const failMsg = document.getElementById('matchFailMsg');
+        const fallbackList = document.getElementById('fallbackCandidatesList');
+        if (failBadge) failBadge.innerText = '⚠️ Gangguan Pemindaian';
         if (failMsg) {
-            failMsg.innerText = 'Terjadi gangguan jaringan saat memindai foto. Silahkan coba lagi.';
+            failMsg.innerText = 'Terjadi gangguan jaringan atau pemrosesan gambar. Silahkan coba lagi.';
         }
+        if (fallbackList) fallbackList.style.display = 'none';
         stepFail.style.display = 'block';
     }
 }

@@ -438,7 +438,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
 
             <!-- Step 3: Hasil Berhasil Ditemukan -->
             <div id="visualSearchStepSuccess" class="visual-search-step" style="display:none;">
-                <div class="match-success-badge">🎉 Foto Berhasil Ditemukan!</div>
+                <div class="match-success-badge" id="matchBadgeTitle">🎉 Foto Berhasil Ditemukan!</div>
                 <div class="match-score-badge" id="matchScoreText">Tingkat Kemiripan 94%</div>
                 
                 <div class="match-result-preview">
@@ -452,21 +452,31 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
                     <a id="btnDownloadMatchedFile" href="#" download class="btn-visual-action btn-gallery" style="text-align:center; text-decoration:none;">
                         ⬇️ Download Foto Ini
                     </a>
-                    <button type="button" onclick="resetVisualSearch()" class="btn-visual-text">
-                        Cari Cetakan Lain
-                    </button>
                 </div>
+
+                <!-- Kandidat Alternatif Lainnya (Jika ada pilihan mendekati) -->
+                <div id="topCandidatesContainer" class="top-candidates-container" style="display:none;">
+                    <div class="candidates-divider">
+                        <span>Bukan foto di atas? Coba cek alternatif ini:</span>
+                    </div>
+                    <div id="topCandidatesList" class="candidates-grid"></div>
+                </div>
+
+                <button type="button" onclick="resetVisualSearch()" class="btn-visual-text" style="margin-top:12px;">
+                    Cari Cetakan Lain
+                </button>
             </div>
 
-            <!-- Step 4: Tidak Ditemukan / Coba Lagi -->
+            <!-- Step 4: Tidak Ditemukan / Tampilkan Kandidat Terdekat -->
             <div id="visualSearchStepFail" class="visual-search-step" style="display:none;">
-                <div class="match-fail-badge">⚠️ Belum Menemukan Foto yang Cocok</div>
+                <div class="match-fail-badge">🔍 Ditemukan Beberapa Foto yang Mirip:</div>
                 <p class="match-fail-desc" id="matchFailMsg">
-                    Kemungkinan foto cetakan kurang terang atau terpotong. Silahkan coba foto ulang dengan pencahayaan yang cukup.
+                    Silahkan ketuk foto Anda di bawah ini jika sesuai:
                 </p>
+                <div id="fallbackCandidatesList" class="candidates-grid" style="margin-bottom:15px;"></div>
                 <div class="visual-action-buttons">
                     <button type="button" onclick="resetVisualSearch()" class="btn-visual-action btn-camera">
-                        📸 Coba Foto Ulang
+                        📸 Coba Foto Ulang Cetakan
                     </button>
                     <button type="button" onclick="closeVisualSearchModal()" class="btn-visual-text">
                         Tutup & Cari Manual di Galeri
