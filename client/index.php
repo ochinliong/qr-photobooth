@@ -413,7 +413,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
             } catch (err) {
                 if (statusBox) {
                     statusBox.className = 'vip-status-msg error';
-                    statusBox.innerText = '⚠️ ' + (err.message || 'Terjadi kesalahan jaringan, silakan coba lagi.');
+                    statusBox.innerText = '⚠️ ' + (err.message || 'Terjadi kesalahan jaringan, silahkan coba lagi.');
                 }
                 btn.disabled = false;
                 btnText.innerText = 'Download Semua File (.ZIP)';

@@ -242,7 +242,7 @@ if (isset($_GET['check_state'])) {
                             <span class="text-xl flex-shrink-0">📸</span>
                             <div class="text-xs md:text-sm text-slate-700 leading-relaxed">
                                 <p class="font-bold text-blue-900 mb-1">Ingin mencari softfile fotomu?</p>
-                                <p>Silakan <strong>fotokan cetakan fisik foto Anda</strong> dan hubungi tim kami via WhatsApp. Kami akan dengan senang hati membantu Anda mencarikan softfilenya!</p>
+                                <p>Silahkan <strong>fotokan cetakan fisik foto Anda</strong> dan hubungi tim kami via WhatsApp. Kami akan dengan senang hati membantu Anda mencarikan softfilenya!</p>
                             </div>
                         </div>
                     </div>

@@ -252,7 +252,7 @@ function renderClientRow($c, $base_url, $is_pending_section = false) {
                     📱 QR Code
                 </a>
             </div>
-            <div class="flex items-center gap-1 bg-white border border-blue-100 rounded-lg p-1">
+            <div class="flex items-center gap-1 bg-white border border-blue-100 rounded-lg p-1 mb-2">
                 <input type="text" readonly value="<?= htmlspecialchars($direct_link) ?>" class="w-full bg-transparent text-xs font-mono text-slate-700 border-none outline-none focus:ring-0 select-all truncate px-1" title="<?= htmlspecialchars($direct_link) ?>">
                 <button type="button" onclick="copyText('<?= htmlspecialchars($direct_link, ENT_QUOTES) ?>', this)" class="bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold px-2.5 py-1 rounded-md transition whitespace-nowrap shadow-xs">
                     Salin
@@ -261,6 +261,10 @@ function renderClientRow($c, $base_url, $is_pending_section = false) {
                     ↗
                 </a>
             </div>
+            <!-- Tombol Buat Pesan Otomatis Tamu -->
+            <button type="button" onclick="copyGuestMsg(this)" data-name="<?= htmlspecialchars($c['nama_client'], ENT_QUOTES) ?>" data-link="<?= htmlspecialchars($direct_link, ENT_QUOTES) ?>" class="w-full flex items-center justify-center gap-1.5 bg-blue-100/90 hover:bg-blue-200 text-blue-800 text-[11px] font-bold py-1.5 px-2.5 rounded-lg border border-blue-200 transition shadow-2xs">
+                <span>💬 Salin Pesan Tamu (WA)</span>
+            </button>
         </div>
     </td>
 
@@ -273,7 +277,7 @@ function renderClientRow($c, $base_url, $is_pending_section = false) {
                 </span>
                 <span class="text-[10px] text-amber-800 font-bold bg-amber-100 border border-amber-200 px-1.5 py-0.2 rounded">ZIP</span>
             </div>
-            <div class="flex items-center gap-1 bg-white border border-amber-200 rounded-lg p-1">
+            <div class="flex items-center gap-1 bg-white border border-amber-200 rounded-lg p-1 mb-2">
                 <input type="text" readonly value="<?= htmlspecialchars($direct_link . '/vip') ?>" class="w-full bg-transparent text-xs font-mono text-amber-950 font-semibold border-none outline-none focus:ring-0 select-all truncate px-1" title="<?= htmlspecialchars($direct_link . '/vip') ?>">
                 <button type="button" onclick="copyText('<?= htmlspecialchars($direct_link . '/vip', ENT_QUOTES) ?>', this)" class="bg-amber-500 hover:bg-amber-600 text-white text-[11px] font-bold px-2.5 py-1 rounded-md transition whitespace-nowrap shadow-xs">
                     Salin VIP
@@ -282,7 +286,11 @@ function renderClientRow($c, $base_url, $is_pending_section = false) {
                     ↗
                 </a>
             </div>
-            <p class="text-[10px] text-amber-700/80 mt-1 font-medium">
+            <!-- Tombol Buat Pesan Otomatis VIP Klien -->
+            <button type="button" onclick="copyVipMsg(this)" data-name="<?= htmlspecialchars($c['nama_client'], ENT_QUOTES) ?>" data-link="<?= htmlspecialchars($direct_link . '/vip', ENT_QUOTES) ?>" class="w-full flex items-center justify-center gap-1.5 bg-amber-100 hover:bg-amber-200 text-amber-900 text-[11px] font-bold py-1.5 px-2.5 rounded-lg border border-amber-200 shadow-2xs mb-1.5 transition">
+                <span>👑 Salin Pesan VIP Klien (WA)</span>
+            </button>
+            <p class="text-[10px] text-amber-700/80 font-medium leading-tight">
                 ✨ Halaman download all media ZIP untuk pengantin
             </p>
         </div>
@@ -474,7 +482,7 @@ function renderClientRow($c, $base_url, $is_pending_section = false) {
                         <?php if (empty($scheduled_clients)): ?>
                             <tr>
                                 <td colspan="4" class="px-6 py-12 text-center text-slate-400 text-sm">
-                                    Belum ada event terjadwal. Silakan tambahkan event baru di atas atau atur tanggal untuk project yang ada di atas.
+                                    Belum ada event terjadwal. Silahkan tambahkan event baru di atas atau atur tanggal untuk project yang ada di atas.
                                 </td>
                             </tr>
                         <?php else: ?>
@@ -508,6 +516,42 @@ function renderClientRow($c, $base_url, $is_pending_section = false) {
                     btn.innerText = orig;
                     btn.className = origBg;
                 }, 1500);
+            });
+        }
+
+        // Fitur Salin Pesan Otomatis Tamu (WhatsApp)
+        function copyGuestMsg(btn) {
+            const name = btn.getAttribute('data-name');
+            const link = btn.getAttribute('data-link');
+            const msg = `Hai Kak, terima kasih telah menghubungi YUHU Photobooth! ✨\n\nTerlampir kami kirimkan link galeri foto acara *${name}*:\n🔗 ${link}\n\nApabila ada kendala atau kesulitan dalam mengunduh foto, silahkan menghubungi kami kembali ya Kak. Terima kasih! 🙏😊`;
+
+            navigator.clipboard.writeText(msg).then(() => {
+                const span = btn.querySelector('span');
+                const orig = span ? span.innerText : btn.innerText;
+                if (span) span.innerText = '✓ Pesan Tamu Tersalin!';
+                btn.classList.add('bg-emerald-100', 'text-emerald-800', 'border-emerald-300');
+                setTimeout(() => {
+                    if (span) span.innerText = orig;
+                    btn.classList.remove('bg-emerald-100', 'text-emerald-800', 'border-emerald-300');
+                }, 1800);
+            });
+        }
+
+        // Fitur Salin Pesan Otomatis VIP Klien (WhatsApp)
+        function copyVipMsg(btn) {
+            const name = btn.getAttribute('data-name');
+            const link = btn.getAttribute('data-link');
+            const msg = `Halo Kak *${name}*, terima kasih banyak telah mempercayakan momen bahagianya bersama YUHU Photobooth! ✨\n\nBerikut kami kirimkan Link VIP Khusus Klien untuk mengunduh seluruh file foto & video acara secara lengkap (All Media ZIP):\n👑 ${link}\n\nSemoga hasilnya berkesan dan menjadi kenangan yang indah. Apabila ada hal yang ingin ditanyakan, silahkan menghubungi kami kembali ya Kak. Terima kasih banyak! 🙏🎉`;
+
+            navigator.clipboard.writeText(msg).then(() => {
+                const span = btn.querySelector('span');
+                const orig = span ? span.innerText : btn.innerText;
+                if (span) span.innerText = '✓ Pesan VIP Tersalin!';
+                btn.classList.add('bg-emerald-100', 'text-emerald-800', 'border-emerald-300');
+                setTimeout(() => {
+                    if (span) span.innerText = orig;
+                    btn.classList.remove('bg-emerald-100', 'text-emerald-800', 'border-emerald-300');
+                }, 1800);
             });
         }
     </script>
