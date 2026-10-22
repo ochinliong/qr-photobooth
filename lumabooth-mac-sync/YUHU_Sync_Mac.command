@@ -34,39 +34,59 @@ echo "   ✨ YUHU PHOTOBOOTH - LUMABOOTH MACOS SYNC ENGINE ✨           "
 echo "================================================================="
 echo -e "${C_RESET}"
 
-# Deteksi lokasi default folder LumaBooth di Mac
-POSSIBLE_DIRS=(
-    "$HOME/Pictures/LumaBooth"
-    "$HOME/Pictures/dslrBooth"
-    "$HOME/Documents/LumaBooth"
-    "$HOME/Documents/dslrBooth"
-    "$HOME/Desktop/LumaBooth"
-)
+# File penyimpan folder terakhir agar tidak perlu drag & drop berulang kali
+CONFIG_FILE="$(dirname "$0")/.saved_watch_dir.txt"
 
+# Cek apakah folder sebelumnya sudah pernah disimpan dan masih ada
 WATCH_DIR=""
-for d in "${POSSIBLE_DIRS[@]}"; do
-    if [ -d "$d" ]; then
-        WATCH_DIR="$d"
-        break
+if [ -f "$CONFIG_FILE" ]; then
+    SAVED_DIR=$(cat "$CONFIG_FILE" 2>/dev/null)
+    if [ -n "$SAVED_DIR" ] && [ -d "$SAVED_DIR" ]; then
+        WATCH_DIR="$SAVED_DIR"
     fi
-done
+fi
 
-# Jika tidak ditemukan otomatis, minta input dari pengguna
+# Jika belum ada folder tersimpan, cari lokasi umum LumaBooth di Mac
+if [ -z "$WATCH_DIR" ]; then
+    POSSIBLE_DIRS=(
+        "$HOME/Pictures/LumaBooth"
+        "$HOME/Pictures/dslrBooth"
+        "$HOME/Documents/LumaBooth"
+        "$HOME/Documents/dslrBooth"
+        "$HOME/Desktop/LumaBooth"
+    )
+
+    for d in "${POSSIBLE_DIRS[@]}"; do
+        if [ -d "$d" ]; then
+            WATCH_DIR="$d"
+            break
+        fi
+    done
+fi
+
+# Jika tidak ditemukan otomatis, minta drag & drop dari pengguna
 if [ -z "$WATCH_DIR" ] || [ ! -d "$WATCH_DIR" ]; then
-    echo -e "${C_YELLOW}Folder default LumaBooth tidak ditemukan otomatis di Mac ini.${C_RESET}"
-    echo -e "Silahkan ${C_BOLD}drag & drop folder LumaBooth Anda${C_RESET} ke jendela Terminal ini, lalu tekan Enter:"
+    echo -e "${C_YELLOW}Folder default LumaBooth belum tersimpan di Mac ini.${C_RESET}"
+    echo -e "Silahkan buka Finder, lalu ${C_BOLD}TARIK & LEPAS (DRAG & DROP) folder foto acara Anda${C_RESET} ke jendela Terminal ini:"
+    printf "📁 Drop folder di sini: "
     read -r USER_INPUT_DIR
-    # Hilangkan tanda kutip jika di-drag & drop
-    WATCH_DIR=$(echo "$USER_INPUT_DIR" | sed -e "s/^'//" -e "s/'$//" -e 's/^"//' -e 's/"$//')
+    
+    # Bersihkan kutip dan escape backslash (karena Mac otomatis memberi backslash jika nama folder ada spasi)
+    CLEANED_DIR=$(echo "$USER_INPUT_DIR" | sed -e "s/^'//" -e "s/'$//" -e 's/^"//' -e 's/"$//' -e 's/\\ / /g')
+    WATCH_DIR="$CLEANED_DIR"
 fi
 
 # Validasi folder
 if [ ! -d "$WATCH_DIR" ]; then
     echo -e "${C_RED}❌ Error: Folder '$WATCH_DIR' tidak ditemukan!${C_RESET}"
+    echo "Silahkan jalankan ulang skrip dan pastikan folder yang di-drag benar."
     echo "Tekan Enter untuk keluar..."
     read -r
     exit 1
 fi
+
+# Simpan lokasi folder ini agar di kemudian hari langsung jalan otomatis tanpa tanya lagi
+echo "$WATCH_DIR" > "$CONFIG_FILE"
 
 echo -e "${C_GREEN}📁 Memantau Folder:${C_RESET} ${C_BOLD}$WATCH_DIR${C_RESET}"
 echo -e "${C_GREEN}🌐 Server Tujuan:${C_RESET} ${C_BOLD}$API_URL${C_RESET}"
