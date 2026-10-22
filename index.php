@@ -65,21 +65,12 @@ foreach ($all_clients as $client) {
             <img src="https://qr.yuhu.co.id/client/logo.png" alt="Yuhu Logo" class="h-16 md:h-20 w-auto mb-6 drop-shadow-sm transition-transform duration-300 hover:scale-105">
             
             <!-- Card Sambutan -->
-            <div class="w-full max-w-md mx-auto bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-                <p class="text-slate-800 font-bold text-[15px] mb-3">Terima kasih telah mengabadikan momen bersama kami! ✨</p>
-                <div class="w-12 h-1 bg-slate-200 mx-auto rounded-full mb-4"></div>
-                <p class="text-slate-500 text-sm leading-relaxed mb-4">
+            <div class="w-full max-w-md mx-auto bg-white rounded-2xl p-6 shadow-sm border border-gray-100 text-center">
+                <p class="text-slate-800 font-bold text-[15px] mb-2">Terima kasih telah mengabadikan momen bersama kami! ✨</p>
+                <div class="w-12 h-1 bg-slate-200 mx-auto rounded-full mb-3"></div>
+                <p class="text-slate-500 text-sm leading-relaxed">
                     Silahkan cari nama acara yang Anda hadiri pada daftar di bawah ini, lalu klik tombol tersebut untuk melihat dan mengunduh hasil foto Anda.
                 </p>
-                <!-- Warning Notice -->
-                <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-left">
-                    <div class="flex items-start">
-                        <svg class="w-5 h-5 text-amber-500 mt-0.5 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-                        <p class="text-xs text-amber-700 leading-relaxed">
-                            <strong>Penting:</strong> Jangan menyimpan (bookmark) halaman ini karena acara Anda akan otomatis hilang setelah selesai. Gunakan fitur <strong>Copy Link</strong> di bawah untuk menyimpan link galeri permanen Anda.
-                        </p>
-                    </div>
-                </div>
             </div>
         </div>
 
@@ -161,8 +152,20 @@ foreach ($all_clients as $client) {
             </div>
         </div>
 
+        <!-- Info Notice / Bookmark Tip -->
+        <div class="w-full max-w-md mt-4 bg-amber-50/90 border border-amber-200/80 rounded-xl p-3.5 shadow-xs text-left">
+            <div class="flex items-start gap-2.5">
+                <div class="text-amber-500 mt-0.5 flex-shrink-0">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                </div>
+                <p class="text-xs text-amber-800 leading-relaxed font-medium">
+                    <strong>Penting:</strong> Jangan menyimpan <em>(bookmark)</em> halaman portal ini karena daftar acara akan berganti. Gunakan tombol <strong>Copy Link</strong> pada acara Anda di atas untuk menyimpan tautan galeri permanen.
+                </p>
+            </div>
+        </div>
+
         <!-- Action Buttons -->
-        <div class="w-full max-w-md mt-8 space-y-3">
+        <div class="w-full max-w-md mt-6 space-y-3">
             <a href="https://wa.me/6285603202222" target="_blank" class="flex items-center justify-center w-full bg-slate-800 text-white font-semibold py-3 rounded-xl shadow-md hover:bg-slate-900 transition-all">
                 Pricelist & Booking
             </a>
