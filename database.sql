@@ -17,5 +17,6 @@ CREATE TABLE IF NOT EXISTS clients (
     jam_selesai TIME NULL DEFAULT NULL,
     qr_code_path VARCHAR(255) NOT NULL,
     folder_foto_path VARCHAR(255) NOT NULL,
+    enable_visual_search TINYINT(1) NOT NULL DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

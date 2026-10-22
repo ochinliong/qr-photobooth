@@ -70,8 +70,57 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
         }
     }
 
-    $stmt = $pdo->prepare("INSERT INTO clients (nama_client, slug, lokasi, tanggal_event, jam_mulai, jam_selesai, qr_code_path, folder_foto_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-    $stmt->execute([$nama_client, $slug, $lokasi, $tanggal_event, $jam_mulai, $jam_selesai, 'uploads/qrcodes/'.$qr_filename, $link_galeri]);
+    $enable_visual_search = isset($_POST['enable_visual_search']) ? 1 : 0;
+
+    try {
+        $stmt = $pdo->prepare("INSERT INTO clients (nama_client, slug, lokasi, tanggal_event, jam_mulai, jam_selesai, qr_code_path, folder_foto_path, enable_visual_search) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        $stmt->execute([$nama_client, $slug, $lokasi, $tanggal_event, $jam_mulai, $jam_selesai, 'uploads/qrcodes/'.$qr_filename, $link_galeri, $enable_visual_search]);
+    } catch (Exception $e) {
+        $stmt = $pdo->prepare("INSERT INTO clients (nama_client, slug, lokasi, tanggal_event, jam_mulai, jam_selesai, qr_code_path, folder_foto_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+        $stmt->execute([$nama_client, $slug, $lokasi, $tanggal_event, $jam_mulai, $jam_selesai, 'uploads/qrcodes/'.$qr_filename, $link_galeri]);
+    }
+
+    // Buat/perbarui config.json di folder photos
+    $cfg_path = $gallery_folder_path . '/config.json';
+    $cfg = file_exists($cfg_path) ? (@json_decode(file_get_contents($cfg_path), true) ?: []) : [];
+    $cfg['enable_visual_search'] = ($enable_visual_search === 1);
+    @file_put_contents($cfg_path, json_encode($cfg, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+
+    header("Location: index.php");
+    exit;
+}
+
+// Handle Quick Toggle Visual Search
+if (isset($_GET['toggle_search'])) {
+    $id = (int)$_GET['toggle_search'];
+    $stmt_find = $pdo->prepare("SELECT * FROM clients WHERE id = ?");
+    $stmt_find->execute([$id]);
+    $toggle_c = $stmt_find->fetch(PDO::FETCH_ASSOC);
+    if ($toggle_c) {
+        $current_val = isset($toggle_c['enable_visual_search']) ? (int)$toggle_c['enable_visual_search'] : 1;
+        $new_val = ($current_val === 1) ? 0 : 1;
+        
+        try {
+            $pdo->prepare("UPDATE clients SET enable_visual_search = ? WHERE id = ?")->execute([$new_val, $id]);
+        } catch (Exception $e) {}
+
+        // Update config.json di photos
+        $f_hint = extractLumaboothFolderFromUrl($toggle_c['folder_foto_path'] ?? '');
+        if ($f_hint === '') $f_hint = str_replace(' ', '_', $toggle_c['nama_client']);
+        $photos_dir = '../client/photos/' . $f_hint;
+        if (is_dir($photos_dir)) {
+            $cfg_path = $photos_dir . '/config.json';
+            $cfg = file_exists($cfg_path) ? (@json_decode(file_get_contents($cfg_path), true) ?: []) : [];
+            $cfg['enable_visual_search'] = ($new_val === 1);
+            @file_put_contents($cfg_path, json_encode($cfg, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+        }
+
+        if (isset($_GET['ajax'])) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => true, 'new_status' => $new_val]);
+            exit;
+        }
+    }
     header("Location: index.php");
     exit;
 }
@@ -233,6 +282,12 @@ function renderClientRow($c, $base_url, $is_pending_section = false) {
             <a href="<?= htmlspecialchars($internal_gallery_url) ?>" target="_blank" class="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition">
                 👁️ Lihat Galeri ↗
             </a>
+            <?php 
+            $is_search_on = (!isset($c['enable_visual_search']) || (int)$c['enable_visual_search'] === 1);
+            ?>
+            <button type="button" onclick="toggleVisualSearch(<?= $c['id'] ?>, this)" class="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full transition <?= $is_search_on ? 'bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100' : 'bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200' ?>" title="Klik untuk On/Off fitur Cari Foto dari Cetakan Fisik">
+                <span>📸 Cari Cetak: <?= $is_search_on ? '<strong class="text-emerald-600">ON</strong>' : '<strong class="text-rose-600">OFF</strong>' ?></span>
+            </button>
             <?php if ($is_auto_lokasi): ?>
                 <span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200" title="Dibuat otomatis oleh sistem saat foto pertama dikirim dari LumaBooth">
                     ⚡ Auto LumaBooth
@@ -402,6 +457,15 @@ function renderClientRow($c, $base_url, $is_pending_section = false) {
                     <label class="block text-sm font-medium text-gray-700">Jam Selesai</label>
                     <input type="time" name="jam_selesai" required class="mt-1 w-full px-3 py-2 border rounded-md">
                 </div>
+                <div class="md:col-span-2 p-3 bg-purple-50/70 border border-purple-200 rounded-lg">
+                    <label class="flex items-center gap-2.5 cursor-pointer">
+                        <input type="checkbox" name="enable_visual_search" value="1" checked class="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded">
+                        <div>
+                            <span class="text-xs font-bold text-purple-900">📸 Aktifkan Fitur Cari Foto dari Hasil Cetak (Visual Search)</span>
+                            <span class="block text-[11px] text-purple-700">Tamu dapat memfoto kertas cetakan untuk mencari softfile aslinya secara otomatis. Dapat diaktifkan / dinonaktifkan kapan saja.</span>
+                        </div>
+                    </label>
+                </div>
                 <div class="md:col-span-2">
                     <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 font-semibold">Simpan & Generate QR</button>
                 </div>
@@ -553,6 +617,35 @@ function renderClientRow($c, $base_url, $is_pending_section = false) {
                     btn.classList.remove('bg-emerald-100', 'text-emerald-800', 'border-emerald-300');
                 }, 1800);
             });
+        }
+
+        // Toggle Quick ON/OFF Fitur Cari Foto Cetak
+        function toggleVisualSearch(clientId, btn) {
+            btn.disabled = true;
+            btn.style.opacity = '0.5';
+            fetch(`index.php?toggle_search=${clientId}&ajax=1`)
+                .then(res => res.json())
+                .then(data => {
+                    btn.disabled = false;
+                    btn.style.opacity = '1';
+                    if (data && data.success) {
+                        const isOn = (data.new_status === 1);
+                        if (isOn) {
+                            btn.className = 'inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full transition bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100';
+                            btn.innerHTML = '<span>📸 Cari Cetak: <strong class="text-emerald-600">ON</strong></span>';
+                        } else {
+                            btn.className = 'inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full transition bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200';
+                            btn.innerHTML = '<span>📸 Cari Cetak: <strong class="text-rose-600">OFF</strong></span>';
+                        }
+                    } else {
+                        alert('Gagal mengubah status. Silahkan coba lagi.');
+                    }
+                })
+                .catch(err => {
+                    btn.disabled = false;
+                    btn.style.opacity = '1';
+                    window.location.href = `index.php?toggle_search=${clientId}`;
+                });
         }
     </script>
 </body>

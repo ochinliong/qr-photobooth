@@ -166,7 +166,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $selected_folder !== '') {
         $cfg['title'] = trim($_POST['custom_title'] ?? '');
         $cfg['subtitle'] = trim($_POST['custom_subtitle'] ?? '');
         $cfg['visible_folders'] = isset($_POST['visible_folders']) && is_array($_POST['visible_folders']) ? $_POST['visible_folders'] : [];
+        $cfg['enable_visual_search'] = isset($_POST['enable_visual_search']);
         saveEventGalleryConfig($config_file, $cfg);
+
+        // Jika ada data client di database, sync juga ke kolom enable_visual_search
+        if ($client_info && isset($client_info['id'])) {
+            try {
+                $pdo->prepare("UPDATE clients SET enable_visual_search = ? WHERE id = ?")
+                    ->execute([$cfg['enable_visual_search'] ? 1 : 0, $client_info['id']]);
+            } catch (Exception $e) {}
+        }
+
         $flash_msg = "Pengaturan tampilan galeri berhasil disimpan!";
     }
 
@@ -369,6 +379,7 @@ $current_subtitle = ($selected_event && !empty($selected_event['lokasi']) && $se
 $current_visible = ['Prints', 'Animated'];
 $current_hidden = [];
 
+$current_visual_search = true;
 if ($selected_folder !== '') {
     $cfg_file = $selected_dir_path . '/config.json';
     if (file_exists($cfg_file)) {
@@ -377,6 +388,9 @@ if ($selected_folder !== '') {
         if (!empty(trim($json['subtitle'] ?? ''))) $current_subtitle = $json['subtitle'];
         if (isset($json['visible_folders']) && is_array($json['visible_folders'])) $current_visible = $json['visible_folders'];
         if (isset($json['hidden_files']) && is_array($json['hidden_files'])) $current_hidden = $json['hidden_files'];
+        if (isset($json['enable_visual_search'])) $current_visual_search = (bool)$json['enable_visual_search'];
+    } elseif ($client_info && isset($client_info['enable_visual_search'])) {
+        $current_visual_search = ((int)$client_info['enable_visual_search'] === 1);
     }
 }
 
@@ -694,6 +708,12 @@ $sessions = array_values($sessions_map);
                                             <label class="block text-xs font-semibold text-slate-600 mb-1">Subtitle Galeri</label>
                                             <input type="text" name="custom_subtitle" value="<?= htmlspecialchars($current_subtitle) ?>" class="w-full px-3 py-1.5 border rounded-lg text-xs">
                                         </div>
+                                    </div>
+                                    <div class="pt-1 pb-1">
+                                        <label class="flex items-center gap-2 bg-purple-50/70 border border-purple-200 px-3 py-2 rounded-lg text-xs font-semibold cursor-pointer hover:bg-purple-100">
+                                            <input type="checkbox" name="enable_visual_search" value="1" <?= $current_visual_search ? 'checked' : '' ?> class="w-4 h-4 accent-purple-600 rounded">
+                                            <span class="text-purple-900">📸 Aktifkan Fitur Cari Foto dari Hasil Cetak (Visual Search)</span>
+                                        </label>
                                     </div>
                                     <button type="submit" name="update_gallery_settings" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-lg transition">
                                         💾 Simpan Pengaturan Galeri

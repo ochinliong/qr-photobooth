@@ -40,6 +40,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $tanggal_event = !empty($_POST['tanggal_event']) ? $_POST['tanggal_event'] : null;
     $jam_mulai = !empty($_POST['jam_mulai']) ? $_POST['jam_mulai'] : null;
     $jam_selesai = !empty($_POST['jam_selesai']) ? $_POST['jam_selesai'] : null;
+    $enable_visual_search = isset($_POST['enable_visual_search']) ? 1 : 0;
 
     // Buat Direct Link Otomatis sesuai Tahun & Nama Klien (tanpa spasi)
     $tahun_event = $tanggal_event ? date('Y', strtotime($tanggal_event)) : date('Y');
@@ -64,8 +65,22 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         }
     }
 
-    $stmt = $pdo->prepare("UPDATE clients SET nama_client = ?, lokasi = ?, folder_foto_path = ?, tanggal_event = ?, jam_mulai = ?, jam_selesai = ? WHERE id = ?");
-    $stmt->execute([$nama_client, $lokasi, $link_galeri, $tanggal_event, $jam_mulai, $jam_selesai, $id]);
+    try {
+        $stmt = $pdo->prepare("UPDATE clients SET nama_client = ?, lokasi = ?, folder_foto_path = ?, tanggal_event = ?, jam_mulai = ?, jam_selesai = ?, enable_visual_search = ? WHERE id = ?");
+        $stmt->execute([$nama_client, $lokasi, $link_galeri, $tanggal_event, $jam_mulai, $jam_selesai, $enable_visual_search, $id]);
+    } catch (Exception $e) {
+        $stmt = $pdo->prepare("UPDATE clients SET nama_client = ?, lokasi = ?, folder_foto_path = ?, tanggal_event = ?, jam_mulai = ?, jam_selesai = ? WHERE id = ?");
+        $stmt->execute([$nama_client, $lokasi, $link_galeri, $tanggal_event, $jam_mulai, $jam_selesai, $id]);
+    }
+
+    // Sinkronkan juga pengaturan enable_visual_search ke config.json di folder photos
+    $photos_dir = '../client/photos/' . $lumabooth_folder;
+    if (is_dir($photos_dir)) {
+        $cfg_path = $photos_dir . '/config.json';
+        $cfg = file_exists($cfg_path) ? (@json_decode(file_get_contents($cfg_path), true) ?: []) : [];
+        $cfg['enable_visual_search'] = ($enable_visual_search === 1);
+        @file_put_contents($cfg_path, json_encode($cfg, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+    }
     
     header("Location: index.php");
     exit;
@@ -127,6 +142,15 @@ $init_direct_link = rtrim($base_url, '/') . '/' . $init_year . '/' . $init_clean
             <p class="text-xs text-amber-600 font-medium mt-1">
                 💡 <em>Catatan:</em> Project baru belum akan ditampilkan di halaman Live Events (files.yuhu.co.id) sampai Tanggal dan Jam Acara di atas diisi.
             </p>
+            <div class="p-3.5 bg-purple-50/80 border border-purple-200 rounded-lg">
+                <label class="flex items-start gap-3 cursor-pointer">
+                    <input type="checkbox" name="enable_visual_search" value="1" <?= (!isset($client['enable_visual_search']) || (int)$client['enable_visual_search'] === 1) ? 'checked' : '' ?> class="mt-0.5 h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded">
+                    <div>
+                        <span class="block text-xs font-bold text-purple-900">📸 Fitur Pencarian Foto dari Hasil Cetak (Visual Search)</span>
+                        <span class="block text-[11px] text-purple-700 mt-0.5">Jika aktif, tamu dapat memfoto kertas cetakan fisik untuk mencari softfile secara otomatis tanpa kode. Jika dinonaktifkan, tombol ini tidak akan tampil di galeri acara ini.</span>
+                    </div>
+                </label>
+            </div>
             <div class="flex flex-wrap items-center justify-between gap-3 pt-6">
                 <a href="gallery.php?id=<?= $client['id'] ?>" class="bg-emerald-50 text-emerald-700 border border-emerald-200 px-4 py-2 rounded-md hover:bg-emerald-100 font-semibold text-sm">
                     🖼️ Kelola Foto Galeri Acara Ini

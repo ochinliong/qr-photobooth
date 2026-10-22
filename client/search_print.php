@@ -58,6 +58,42 @@ if (!is_dir($target_dir)) {
     exit;
 }
 
+// Cek apakah fitur visual search diizinkan untuk event ini
+$search_enabled = true;
+$cfg_file = $target_dir . '/config.json';
+if (file_exists($cfg_file)) {
+    $cfg = @json_decode(@file_get_contents($cfg_file), true);
+    if (isset($cfg['enable_visual_search'])) {
+        $search_enabled = (bool)$cfg['enable_visual_search'];
+    }
+}
+if ($search_enabled) {
+    try {
+        $stmt_check = $pdo->query("SELECT * FROM clients");
+        foreach ($stmt_check->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $c_name = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $row['nama_client']));
+            $c_slug = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $row['slug']));
+            $c_folder = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', extractLumaboothFolderFromUrl($row['folder_foto_path'] ?? '')));
+            if ($req_clean !== '' && ($c_name === $req_clean || $c_slug === $req_clean || ($c_folder !== '' && $c_folder === $req_clean))) {
+                if (isset($row['enable_visual_search']) && (int)$row['enable_visual_search'] === 0) {
+                    $search_enabled = false;
+                }
+                break;
+            }
+        }
+    } catch (Exception $e) {}
+}
+
+if (!$search_enabled) {
+    http_response_code(403);
+    echo json_encode([
+        'success' => false,
+        'match_found' => false,
+        'message' => 'Fitur pencarian foto cetak dinonaktifkan untuk event ini.'
+    ]);
+    exit;
+}
+
 // 2. Ambil Data Gambar yang Diunggah Tamu
 $rawImageData = null;
 if (!empty($_FILES['photo']['tmp_name']) && is_uploaded_file($_FILES['photo']['tmp_name'])) {

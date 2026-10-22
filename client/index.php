@@ -70,6 +70,11 @@ $display_tab_title = "Galeri - " . $display_title;
 $visible_folders = ['Prints', 'Animated'];
 $hidden_files = [];
 $is_vip_mode = isset($_GET['vip']) && $_GET['vip'] === '1';
+$enable_visual_search = true;
+
+if ($db_client && isset($db_client['enable_visual_search'])) {
+    $enable_visual_search = ((int)$db_client['enable_visual_search'] === 1);
+}
 
 $config_path = $target_dir . '/config.json';
 if (file_exists($config_path)) {
@@ -89,6 +94,9 @@ if (file_exists($config_path)) {
     }
     if (isset($json['hidden_files']) && is_array($json['hidden_files'])) {
         $hidden_files = $json['hidden_files'];
+    }
+    if (isset($json['enable_visual_search'])) {
+        $enable_visual_search = (bool)$json['enable_visual_search'];
     }
 }
 
@@ -332,6 +340,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
         </div>
         <?php endif; ?>
 
+        <?php if ($enable_visual_search): ?>
         <!-- Tombol Pencarian Visual dari Foto Cetak Fisik -->
         <div class="visual-search-banner">
             <button type="button" onclick="openVisualSearchModal()" class="btn-visual-search">
@@ -340,6 +349,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
             </button>
             <p class="visual-search-subtext">Punya cetakan fisik? Foto cetakanmu untuk menemukan softfile & video aslinya!</p>
         </div>
+        <?php endif; ?>
     </header>
 
     <main class="gallery-container">
@@ -389,6 +399,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
         </div>
     </div>
 
+    <?php if ($enable_visual_search): ?>
     <!-- Modal Pencarian Visual dari Cetakan Fisik -->
     <div id="visualSearchModal" class="visual-modal-overlay" style="display:none;">
         <div class="visual-modal-card">
@@ -486,6 +497,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
 
         </div>
     </div>
+    <?php endif; ?>
 
     <script src="script.js?v=<?php echo @filemtime(__DIR__ . '/script.js') ?: '2'; ?>"></script>
     <script>
