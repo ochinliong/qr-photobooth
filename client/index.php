@@ -368,10 +368,13 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
 
             <div class="modal-actions">
                 <div class="slide-dots" id="slideDots"></div>
-                <a id="downloadBtn" href="#" download class="btn-download">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                    Download File Ini
-                </a>
+                <button type="button" id="downloadBtn" class="btn-download" onclick="handleMediaDownload(event)">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                    <span id="downloadBtnText">Download File Ini</span>
+                </button>
+                <div id="iosHint" class="ios-hint" style="display: none;">
+                    💡 Tips iPhone: Pilih <strong>"Simpan Gambar"</strong> / <strong>"Save Video"</strong> pada menu untuk langsung masuk ke Photos
+                </div>
                 <div class="slide-indicator" id="slideIndicator">1 / 1</div>
             </div>
         </div>

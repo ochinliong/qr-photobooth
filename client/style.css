@@ -376,11 +376,40 @@ body {
     border-radius: 25px;
     text-decoration: none;
     font-weight: 600;
-    transition: background-color 0.2s;
+    transition: all 0.2s;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 14px;
+    outline: none;
+    box-shadow: 0 4px 12px rgba(52, 152, 219, 0.35);
+    -webkit-tap-highlight-color: transparent;
 }
 
 .btn-download:hover {
     background-color: #2980b9;
+    box-shadow: 0 6px 16px rgba(52, 152, 219, 0.45);
+}
+
+.btn-download:active {
+    transform: scale(0.98);
+}
+
+.ios-hint {
+    font-size: 11px;
+    color: #e2e8f0;
+    background: rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(4px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    padding: 5px 14px;
+    border-radius: 12px;
+    text-align: center;
+    max-width: 90%;
+    line-height: 1.4;
+}
+
+.ios-hint strong {
+    color: #ffd166;
 }
 
 .slide-indicator {

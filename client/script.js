@@ -6,6 +6,10 @@ const slideDots = document.getElementById('slideDots');
 const prevBtn = document.querySelector('.prev-btn');
 const nextBtn = document.querySelector('.next-btn');
 
+// Deteksi iOS (iPhone / iPad / iPod)
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+              (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
 let currentSessionFiles = [];
 let currentIndex = 0;
 let scrollRaf = null;
@@ -28,6 +32,12 @@ function openSession(sessionIndex) {
         nextBtn.style.display = 'none';
         slideIndicator.style.display = 'none';
         if (slideDots) slideDots.style.display = 'none';
+    }
+
+    // Tampilkan petunjuk khusus jika dibuka dari iPhone
+    if (isIOS) {
+        const iosHint = document.getElementById('iosHint');
+        if (iosHint) iosHint.style.display = 'block';
     }
 
     modal.classList.add('active');
@@ -97,10 +107,24 @@ function syncActiveSlide(index) {
 
     currentIndex = index;
     const file = currentSessionFiles[currentIndex];
+    const ext = (file.ext || '').toLowerCase();
+    const isVideo = ['mp4', 'mov', 'webm'].includes(ext);
 
-    // Update link download sesuai slide yang sedang tampil
-    downloadBtn.href = file.path;
-    downloadBtn.setAttribute('download', file.file ? file.file.split('/').pop() : 'download');
+    // Update teks tombol sesuai jenis media & OS (iPhone vs Android/PC)
+    const btnText = document.getElementById('downloadBtnText');
+    if (btnText) {
+        if (isIOS) {
+            btnText.innerText = isVideo ? 'Simpan Video ke Photos' : 'Simpan Foto ke Photos';
+        } else {
+            btnText.innerText = isVideo ? 'Download Video' : 'Download Foto';
+        }
+    }
+
+    // Update link fallback download
+    if (downloadBtn) {
+        downloadBtn.setAttribute('data-path', file.path);
+        downloadBtn.setAttribute('data-name', file.file ? file.file.split('/').pop() : 'download');
+    }
 
     // Update teks indikator & titik (dots)
     slideIndicator.innerText = (currentIndex + 1) + ' / ' + currentSessionFiles.length;
@@ -123,6 +147,76 @@ function syncActiveSlide(index) {
             }
         }
     });
+}
+
+// Download handler khusus: Di iPhone menggunakan Web Share API Level 2 (Save Image/Video langsung ke Photos)
+async function handleMediaDownload(e) {
+    if (e) e.preventDefault();
+    if (!currentSessionFiles.length || !currentSessionFiles[currentIndex]) return;
+
+    const file = currentSessionFiles[currentIndex];
+    const filePath = file.path;
+    const fileName = file.file ? file.file.split('/').pop() : ('photobooth_' + Date.now());
+    const ext = (file.ext || '').toLowerCase();
+    const isVideo = ['mp4', 'mov', 'webm'].includes(ext);
+
+    const btn = document.getElementById('downloadBtn');
+    const btnText = document.getElementById('downloadBtnText');
+    const origText = btnText ? btnText.innerText : (isVideo ? 'Simpan Video' : 'Simpan Foto');
+
+    // 1. Khusus iOS (iPhone / iPad): Gunakan Web Share API agar muncul opsi "Simpan Gambar / Simpan Video" ke Photos
+    if (isIOS && navigator.canShare) {
+        try {
+            if (btnText) btnText.innerText = 'Menyiapkan...';
+            btn.style.pointerEvents = 'none';
+
+            // Ambil file sebagai Blob
+            const response = await fetch(filePath);
+            const blob = await response.blob();
+
+            // Tentukan MIME type yang tepat untuk iOS Photos
+            let mimeType = 'image/jpeg';
+            if (ext === 'png') mimeType = 'image/png';
+            else if (ext === 'webp') mimeType = 'image/webp';
+            else if (ext === 'mp4') mimeType = 'video/mp4';
+            else if (ext === 'mov') mimeType = 'video/quicktime';
+
+            const fileObj = new File([blob], fileName, { type: mimeType });
+
+            if (navigator.canShare({ files: [fileObj] })) {
+                await navigator.share({
+                    files: [fileObj],
+                    title: fileName,
+                });
+                if (btnText) btnText.innerText = origText;
+                btn.style.pointerEvents = 'auto';
+                return;
+            }
+        } catch (err) {
+            // Jika user membatalkan (AbortError) saat share sheet terbuka, abaikan dengan tenang
+            if (err.name === 'AbortError') {
+                if (btnText) btnText.innerText = origText;
+                btn.style.pointerEvents = 'auto';
+                return;
+            }
+            console.warn('Gagal share iOS, gunakan fallback download:', err);
+        } finally {
+            if (btnText) btnText.innerText = origText;
+            btn.style.pointerEvents = 'auto';
+        }
+    }
+
+    // 2. Untuk Android / Desktop / Browser Lain: Download file secara langsung
+    try {
+        const a = document.createElement('a');
+        a.href = filePath;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    } catch (err) {
+        window.open(filePath, '_blank');
+    }
 }
 
 function scrollToSlide(index, smooth = true) {
