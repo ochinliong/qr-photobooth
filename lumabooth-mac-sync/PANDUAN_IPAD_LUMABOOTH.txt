@@ -1,0 +1,46 @@
+================================================================================
+   PANDUAN SINKRONISASI LUMABOOTH DI IPAD (IPADOS)
+================================================================================
+
+Karena iPad menggunakan sistem operasi iPadOS (sistem tertutup/sandbox tanpa
+terminal file background seperti di Windows/Mac), ada 3 cara yang sangat mudah
+dan umum digunakan untuk mengunggah foto dari iPad ke files.yuhu.co.id:
+
+--------------------------------------------------------------------------------
+METODE 1: MENGGUNAKAN ICLOUD DRIVE (PALING PRAKTIS JIKA ADA LAPTOP/PC)
+--------------------------------------------------------------------------------
+Jika di lokasi acara Anda membawa laptop (MacBook atau Windows):
+1. Di LumaBooth iPad:
+   - Atur lokasi penyimpanan acara ke folder "iCloud Drive" (atau Google Drive / OneDrive).
+2. Di MacBook atau Windows:
+   - Pastikan laptop Anda terhubung ke akun iCloud yang sama sehingga folder tersebut otomatis tersinkronisasi.
+3. Jalankan file sinkronisasi di laptop:
+   - Di Windows: Jalankan "YUHU v12.bat"
+   - Di Mac: Jalankan "YUHU_Sync_Mac.command"
+4. Setiap ada tamu berfoto di iPad, file akan masuk ke iCloud dan langsung diunggah otomatis oleh laptop ke portal files.yuhu.co.id!
+
+--------------------------------------------------------------------------------
+METODE 2: MENGGUNAKAN APPLE SHORTCUTS (PINTASAN OTOMATIS DI IPAD)
+--------------------------------------------------------------------------------
+Jika iPad berjalan sendiri TANPA laptop:
+1. Di LumaBooth iPad:
+   - Buka Settings -> Sharing -> Aktifkan "Save to Camera Roll".
+   - Buat Album khusus di iPad, misalnya "YUHU Photobooth".
+2. Di aplikasi "Shortcuts" (Pintasan) bawaan iPad:
+   - Buat Otomatisasi Pribadi (Personal Automation):
+     "Ketika ada foto baru masuk ke Album YUHU Photobooth..."
+   - Tambahkan aksi "Dapatkan Konten URL" (Get contents of URL):
+     * URL: https://files.yuhu.co.id/client/api_upload.php
+     * Metode: POST
+     * Badan Permintaan (Form):
+       - token: YuhuSecretToken2026
+       - client_event: [Nama Event]
+       - file: [Foto Pintasan]
+3. Setiap kali sesi LumaBooth selesai dan foto tersimpan di galeri iPad, iPad akan otomatis mengirimkannya ke server!
+
+--------------------------------------------------------------------------------
+METODE 3: UPLOAD LANGSUNG VIA WEB BROWSER SAFARI DI IPAD
+--------------------------------------------------------------------------------
+1. Buka browser Safari di iPad: https://files.yuhu.co.id/admin
+2. Masuk ke halaman admin dan pilih event Anda.
+3. Anda dapat memilih foto langsung dari Photo Library iPad dan mengunggahnya.

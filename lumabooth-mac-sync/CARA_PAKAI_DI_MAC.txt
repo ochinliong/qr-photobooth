@@ -1,0 +1,18 @@
+================================================================================
+   PANDUAN SINKRONISASI LUMABOOTH DI MACOS (MACBOOK / IMAC / MAC MINI)
+================================================================================
+
+1. CARA MENGGUNAKAN DI MAC:
+   - Salin folder "lumabooth-mac-sync" ini ke komputer Mac Anda.
+   - Buka Terminal Mac sekali saja untuk memberikan izin eksekusi (klik 2x):
+       chmod +x YUHU_Sync_Mac.command
+   - Setelah itu, Anda cukup KLIK 2x (DOUBLE-CLICK) file "YUHU_Sync_Mac.command"
+     setiap kali ingin menjalankan sinkronisasi.
+
+2. CARA KERJA:
+   - Skrip akan otomatis memantau folder acara LumaBooth di Mac Anda.
+   - Setiap kali ada hasil foto cetak (Prints) atau video animasi baru,
+     file akan langsung diunggah otomatis ke portal:
+     https://files.yuhu.co.id
+   - Foto mentahan (Singles / Originals) 100% otomatis diabaikan agar
+     menghemat kuota & ruang server.
