@@ -46,7 +46,7 @@ if [ -f "$CONFIG_FILE" ]; then
     fi
 fi
 
-# Jika belum ada folder tersimpan, cari lokasi umum LumaBooth di Mac
+# Jika belum ada folder tersimpan, cari lokasi umum LumaBooth di Mac (termasuk folder Sandbox tersembunyi)
 if [ -z "$WATCH_DIR" ]; then
     POSSIBLE_DIRS=(
         "$HOME/Pictures/LumaBooth"
@@ -54,6 +54,12 @@ if [ -z "$WATCH_DIR" ]; then
         "$HOME/Documents/LumaBooth"
         "$HOME/Documents/dslrBooth"
         "$HOME/Desktop/LumaBooth"
+        "$HOME/Movies/LumaBooth"
+        "$HOME/Library/Containers/com.lumasoft.lumabooth/Data/Documents/LumaBooth"
+        "$HOME/Library/Containers/com.lumasoft.lumabooth/Data/Documents"
+        "$HOME/Library/Containers/com.lumasoft.lumabooth/Data/Pictures/LumaBooth"
+        "$HOME/Library/Application Support/LumaBooth"
+        "$HOME/Library/Application Support/dslrBooth"
     )
 
     for d in "${POSSIBLE_DIRS[@]}"; do
@@ -62,6 +68,14 @@ if [ -z "$WATCH_DIR" ]; then
             break
         fi
     done
+
+    # Jika belum ditemukan di lokasi umum, lacak otomatis menggunakan Spotlight bawaan Mac (mdfind)
+    if [ -z "$WATCH_DIR" ]; then
+        AUTO_SPOTLIGHT=$(mdfind "kMDItemContentType == 'public.folder' && (kMDItemDisplayName == 'LumaBooth'c || kMDItemDisplayName == 'dslrBooth'c)" 2>/dev/null | grep -v "/Library/Caches" | head -n 1)
+        if [ -n "$AUTO_SPOTLIGHT" ] && [ -d "$AUTO_SPOTLIGHT" ]; then
+            WATCH_DIR="$AUTO_SPOTLIGHT"
+        fi
+    fi
 fi
 
 # Jika tidak ditemukan otomatis, minta drag & drop dari pengguna
