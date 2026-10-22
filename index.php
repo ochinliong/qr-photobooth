@@ -1,4 +1,10 @@
 <?php
+// Anti-Cache Headers: Mencegah browser (Safari/Chrome HP) dan proxy server menyimpan cache halaman
+header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
+header("Cache-Control: post-check=0, pre-check=0", false);
+header("Pragma: no-cache");
+header("Expires: Sat, 26 Jul 1997 05:00:00 GMT");
+
 require_once 'config.php';
 require_once __DIR__ . '/lumabooth_sync.php';
 
@@ -26,6 +32,11 @@ foreach ($all_clients as $client) {
         $start = new DateTime($client['tanggal_event'] . ' ' . $client['jam_mulai'], new DateTimeZone('Asia/Jakarta'));
         $end   = new DateTime($client['tanggal_event'] . ' ' . $client['jam_selesai'], new DateTimeZone('Asia/Jakarta'));
         
+        // Dukungan acara lintas tengah malam (misal mulai 20:00, selesai 02:00)
+        if ($end < $start) {
+            $end->modify('+1 day');
+        }
+
         $visible_start = clone $start;
         $visible_start->modify('-1 hour');
         
@@ -39,12 +50,35 @@ foreach ($all_clients as $client) {
         continue;
     }
 }
+
+// Fingerprint status Live Event untuk sinkronisasi realtime kilat
+$state_items = [];
+foreach ($active_clients as $ac) {
+    $state_items[] = $ac['id'] . '|' . $ac['nama_client'] . '|' . ($ac['tanggal_event'] ?? '') . '|' . ($ac['jam_mulai'] ?? '') . '|' . ($ac['jam_selesai'] ?? '') . '|' . ($ac['lokasi'] ?? '');
+}
+$portal_hash = md5(implode(';', $state_items) . '_count:' . count($active_clients));
+
+// Endpoint ringan AJAX untuk pengecekan realtime setiap beberapa detik & saat resume layar HP
+if (isset($_GET['check_state'])) {
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode([
+        'status' => 'success',
+        'hash' => $portal_hash,
+        'count' => count($active_clients),
+        'server_time' => $now->format('H:i:s')
+    ]);
+    exit;
+}
 ?>
 <!DOCTYPE html>
 <html lang="id">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <!-- Meta Anti-Cache untuk browser mobile -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>Live Events - YUHU Photobooth</title>
     <link rel="icon" href="https://qr.yuhu.co.id/2025/icon.png" type="image/png">
     <link rel="apple-touch-icon" href="https://qr.yuhu.co.id/2025/icon.png">
@@ -239,10 +273,107 @@ foreach ($all_clients as $client) {
     </footer>
 
     <script>
-        <?php if (count($active_clients) > 0): ?>
-        // Tampilkan Popup Peringatan (SweetAlert) saat pengunjung mengetuk Address Bar (kehilangan fokus)
+        // State Hash Awal dari Server
+        let currentHash = "<?= $portal_hash ?>";
+        let isChecking = false;
+
+        // 1. Fungsi Pengecekan Realtime (Anti-Cache & Hemat Kuota)
+        function checkRealtimeUpdate() {
+            if (isChecking) return;
+            isChecking = true;
+
+            fetch('index.php?check_state=1&_t=' + Date.now(), {
+                cache: 'no-store',
+                headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
+            })
+            .then(res => res.json())
+            .then(data => {
+                isChecking = false;
+                if (data && data.hash && data.hash !== currentHash) {
+                    console.log('Perubahan event terdeteksi! Memperbarui tampilan...');
+                    currentHash = data.hash;
+                    fetchUpdatedView();
+                }
+            })
+            .catch(err => {
+                isChecking = false;
+            });
+        }
+
+        // 2. Mengambil HTML Tampilan Terbaru & Transisi Lembut (Tanpa Reload Kasar)
+        function fetchUpdatedView() {
+            fetch('index.php?_t=' + Date.now(), {
+                cache: 'no-store',
+                headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
+            })
+            .then(res => res.text())
+            .then(html => {
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, 'text/html');
+                const newContainer = doc.querySelector('#main-portal-view');
+                const currentContainer = document.querySelector('#main-portal-view');
+
+                if (newContainer && currentContainer) {
+                    currentContainer.style.transition = 'opacity 0.25s ease-out';
+                    currentContainer.style.opacity = 0;
+                    setTimeout(() => {
+                        currentContainer.innerHTML = newContainer.innerHTML;
+                        currentContainer.style.transition = 'opacity 0.35s ease-in';
+                        currentContainer.style.opacity = 1;
+                    }, 250);
+                } else {
+                    window.location.reload();
+                }
+            })
+            .catch(() => {
+                window.location.reload();
+            });
+        }
+
+        // 3. Polling Realtime setiap 5 detik saat tamu aktif di halaman
+        setInterval(checkRealtimeUpdate, 5000);
+
+        // 4. DETEKSI INSTAN saat tamu membuka kembali layar HP / membuka tab lagi (Wakeup from Sleep)
+        document.addEventListener('visibilitychange', function() {
+            if (document.visibilityState === 'visible') {
+                checkRealtimeUpdate();
+            }
+        });
+
+        // 5. DETEKSI INSTAN saat jendela/browser mendapat fokus kembali
+        window.addEventListener('focus', function() {
+            checkRealtimeUpdate();
+        });
+
+        // 6. DETEKSI INSTAN saat halaman di-restore dari Back-Forward Cache (BFCache iOS Safari / Chrome)
+        window.addEventListener('pageshow', function(event) {
+            checkRealtimeUpdate();
+        });
+
+        // 7. Fitur Copy Link (Bekerja secara global baik sebelum / sesudah update AJAX)
+        function copyToClipboard(text, btn) {
+            navigator.clipboard.writeText(text).then(() => {
+                const span = btn.querySelector('span');
+                const originalText = span ? span.innerText : 'Copy Link';
+                if (span) span.innerText = 'Tersalin!';
+                btn.classList.replace('bg-slate-100', 'bg-green-100');
+                btn.classList.replace('text-slate-700', 'text-green-700');
+                btn.classList.replace('border-slate-200', 'border-green-200');
+                
+                setTimeout(() => {
+                    if (span) span.innerText = originalText;
+                    btn.classList.replace('bg-green-100', 'bg-slate-100');
+                    btn.classList.replace('text-green-700', 'text-slate-700');
+                    btn.classList.replace('border-green-200', 'border-slate-200');
+                }, 2000);
+            }).catch(err => {
+                alert('Gagal menyalin link: ' + err);
+            });
+        }
+
+        // 8. Popup Peringatan saat Address Bar disentuh (Hanya muncul jika ada event aktif di layar)
         window.addEventListener('blur', function() {
-            if (!sessionStorage.getItem('blur_warning_shown')) {
+            if (document.querySelector('#event-list') && !sessionStorage.getItem('blur_warning_shown')) {
                 Swal.fire({
                     title: 'Live Events - YUHU Photobooth',
                     html: `
@@ -266,52 +397,6 @@ foreach ($all_clients as $client) {
                 sessionStorage.setItem('blur_warning_shown', 'true');
             }
         });
-
-        // Fitur Copy Link
-        function copyToClipboard(text, btn) {
-            navigator.clipboard.writeText(text).then(() => {
-                const span = btn.querySelector('span');
-                const originalText = span.innerText;
-                span.innerText = 'Tersalin!';
-                btn.classList.replace('bg-slate-100', 'bg-green-100');
-                btn.classList.replace('text-slate-700', 'text-green-700');
-                btn.classList.replace('border-slate-200', 'border-green-200');
-                
-                setTimeout(() => {
-                    span.innerText = originalText;
-                    btn.classList.replace('bg-green-100', 'bg-slate-100');
-                    btn.classList.replace('text-green-700', 'text-slate-700');
-                    btn.classList.replace('border-green-200', 'border-slate-200');
-                }, 2000);
-            }).catch(err => {
-                alert('Gagal menyalin link: ' + err);
-            });
-        }
-        <?php endif; ?>
-
-        // Fitur Auto-Refresh "Tanpa Kedip" (AJAX)
-        // Mengecek ke server setiap 30 detik apakah ada perubahan data
-        setInterval(() => {
-            fetch(window.location.href)
-                .then(response => response.text())
-                .then(html => {
-                    const parser = new DOMParser();
-                    const doc = parser.parseFromString(html, 'text/html');
-                    const newContainer = doc.querySelector('#main-portal-view');
-                    const currentContainer = document.querySelector('#main-portal-view');
-                    
-                    if (newContainer && currentContainer && newContainer.innerHTML.trim() !== currentContainer.innerHTML.trim()) {
-                        // Terapkan transisi lembut
-                        currentContainer.style.opacity = 0;
-                        setTimeout(() => {
-                            currentContainer.innerHTML = newContainer.innerHTML;
-                            currentContainer.style.transition = 'opacity 0.5s ease-in-out';
-                            currentContainer.style.opacity = 1;
-                        }, 300);
-                    }
-                })
-                .catch(err => console.error('Gagal mengecek update otomatis:', err));
-        }, 30000); // 30000 ms = 30 detik
     </script>
 </body>
 </html>
