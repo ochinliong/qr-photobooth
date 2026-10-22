@@ -273,7 +273,11 @@ if ($action === 'upload' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $safe_basename = preg_replace('/[^A-Za-z0-9_\-\.]/', '_', $orig_name);
     $media_category = isset($_POST['category']) ? preg_replace('/[^a-z0-9_]/', '', strtolower($_POST['category'])) : '';
-    if (!empty($media_category) && in_array($media_category, ['prints', 'gifs', 'videos', 'originals'])) {
+    if (!empty($media_category) && in_array($media_category, ['originals', 'singles'])) {
+        echo json_encode(['status' => 'skipped', 'message' => 'Originals / Singles diabaikan']);
+        exit;
+    }
+    if (!empty($media_category) && in_array($media_category, ['prints', 'gifs', 'videos'])) {
         if (strpos($safe_basename, $media_category . '_') !== 0) {
             $safe_basename = $media_category . '_' . $safe_basename;
         }

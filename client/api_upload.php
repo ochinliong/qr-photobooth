@@ -188,6 +188,12 @@ elseif ($tf_lower === 'singles' || $tf_lower === 'single') $target_folder = 'Sin
 elseif ($tf_lower === 'animated' || $tf_lower === 'gifs' || $tf_lower === 'gif' || $tf_lower === 'videos' || $tf_lower === 'video') $target_folder = 'Animated';
 elseif ($tf_lower === 'originals' || $tf_lower === 'original') $target_folder = 'Originals';
 
+// Abaikan file Singles / Originals (tidak perlu diupload ke server galeri)
+if ($target_folder === 'Singles' || $target_folder === 'Originals') {
+    echo json_encode(["status" => "skipped", "message" => "File Singles / Originals diabaikan sesuai pengaturan"]);
+    exit;
+}
+
 // Di folder Animated, abaikan file JPG thumbnail pendamping MP4 LumaBooth (seperti 20260821_231200_371_mp4.jpg)
 if ($target_folder === 'Animated' && in_array($ext, ['jpg', 'jpeg', 'png'])) {
     echo json_encode(["status" => "skipped", "message" => "Thumbnail JPG di folder Animated diabaikan"]);
