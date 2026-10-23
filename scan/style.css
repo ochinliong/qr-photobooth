@@ -1,20 +1,23 @@
 /* ==========================================================================
-   YUHU PHOTOBOOTH - GLOBAL SCAN (scan.yuhu.co.id) STYLESHEET
+   YUHU PHOTOBOOTH - GLOBAL SCAN (scan.yuhu.co.id)
+   Professional & Elegant Boutique Theme
    ========================================================================== */
 
 :root {
-    --bg-dark: #090d16;
-    --card-bg: #111827;
-    --card-border: #1f2937;
-    --primary: #6366f1;
-    --primary-hover: #4f46e5;
-    --accent: #10b981;
-    --accent-hover: #059669;
-    --text-main: #f9fafb;
-    --text-muted: #9ca3af;
-    --radius-lg: 20px;
-    --radius-md: 14px;
-    --shadow-glow: 0 10px 30px -10px rgba(99, 102, 241, 0.4);
+    --bg-page: #0b0f19;
+    --surface-card: #121826;
+    --surface-card-subtle: #182032;
+    --border-light: rgba(255, 255, 255, 0.08);
+    --border-accent: rgba(99, 102, 241, 0.25);
+    --text-primary: #f8fafc;
+    --text-secondary: #94a3b8;
+    --text-tertiary: #64748b;
+    --accent-gold: #e2b774;
+    --accent-emerald: #10b981;
+    --radius-xl: 24px;
+    --radius-lg: 16px;
+    --radius-md: 12px;
+    --shadow-card: 0 20px 45px -15px rgba(0, 0, 0, 0.7);
 }
 
 * {
@@ -25,24 +28,25 @@
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    background-color: var(--bg-dark);
-    color: var(--text-main);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background-color: var(--bg-page);
+    color: var(--text-primary);
     min-height: 100vh;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
     align-items: center;
-    padding: 20px 16px 36px;
+    padding: 24px 16px 40px;
     background-image: 
-        radial-gradient(circle at 50% 0%, rgba(99, 102, 241, 0.15) 0%, transparent 60%),
-        radial-gradient(circle at 100% 100%, rgba(16, 185, 129, 0.08) 0%, transparent 50%);
+        radial-gradient(ellipse at 50% 0%, rgba(99, 102, 241, 0.12) 0%, transparent 70%),
+        radial-gradient(ellipse at 80% 100%, rgba(226, 183, 116, 0.05) 0%, transparent 60%);
     background-attachment: fixed;
+    letter-spacing: -0.01em;
 }
 
 .scan-container {
     width: 100%;
-    max-width: 480px;
+    max-width: 460px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -56,113 +60,165 @@ body {
 }
 
 .scan-logo {
-    height: 48px;
+    height: 44px;
     width: auto;
     object-fit: contain;
-    margin-bottom: 12px;
-    filter: drop-shadow(0 4px 12px rgba(0,0,0,0.4));
+    margin-bottom: 14px;
+    filter: drop-shadow(0 2px 8px rgba(0,0,0,0.3));
+}
+
+.scan-pill-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-light);
+    color: var(--text-secondary);
+    padding: 4px 12px;
+    border-radius: 9999px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+}
+
+.scan-pill-badge .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent-emerald);
 }
 
 .scan-title {
-    font-size: 24px;
-    font-weight: 800;
+    font-size: 26px;
+    font-weight: 700;
     letter-spacing: -0.5px;
-    background: linear-gradient(135deg, #ffffff 40%, #c7d2fe 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    margin-bottom: 6px;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+    line-height: 1.25;
 }
 
 .scan-subtitle {
-    font-size: 13px;
-    color: var(--text-muted);
-    line-height: 1.4;
-    padding: 0 10px;
+    font-size: 13.5px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    padding: 0 14px;
 }
 
-/* Main Box */
+/* Card */
 .scan-card {
-    background: var(--card-bg);
-    border: 1px solid var(--card-border);
-    border-radius: var(--radius-lg);
+    background: var(--surface-card);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-xl);
     width: 100%;
     padding: 24px 20px;
-    box-shadow: 0 20px 40px -15px rgba(0,0,0,0.6);
+    box-shadow: var(--shadow-card);
     position: relative;
-    overflow: hidden;
 }
 
-/* Step 1: Init / Viewfinder */
+/* Viewfinder Area (Photography Studio Focus Style) */
 .viewfinder-box {
     width: 100%;
-    height: 280px;
-    border: 2px dashed rgba(99, 102, 241, 0.4);
-    border-radius: var(--radius-md);
-    background: rgba(17, 24, 39, 0.6);
+    height: 290px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: var(--radius-lg);
+    background: rgba(18, 24, 38, 0.7);
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     text-align: center;
-    padding: 20px;
+    padding: 24px;
     margin-bottom: 20px;
     cursor: pointer;
-    transition: all 0.3s ease;
     position: relative;
+    transition: all 0.25s ease;
+    overflow: hidden;
 }
 
-.viewfinder-box:hover {
-    border-color: var(--primary);
-    background: rgba(99, 102, 241, 0.05);
+.viewfinder-box:hover, .viewfinder-box:active {
+    border-color: rgba(99, 102, 241, 0.5);
+    background: rgba(99, 102, 241, 0.04);
 }
+
+/* Camera Frame Corner Brackets */
+.corner-bracket {
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    border-color: rgba(255, 255, 255, 0.4);
+    border-style: solid;
+    pointer-events: none;
+    transition: border-color 0.25s ease;
+}
+
+.viewfinder-box:hover .corner-bracket {
+    border-color: var(--accent-gold);
+}
+
+.corner-tl { top: 12px; left: 12px; border-width: 2px 0 0 2px; }
+.corner-tr { top: 12px; right: 12px; border-width: 2px 2px 0 0; }
+.corner-bl { bottom: 12px; left: 12px; border-width: 0 0 2px 2px; }
+.corner-br { bottom: 12px; right: 12px; border-width: 0 2px 2px 0; }
 
 .viewfinder-icon {
-    width: 64px;
-    height: 64px;
+    width: 60px;
+    height: 60px;
     border-radius: 50%;
-    background: rgba(99, 102, 241, 0.15);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-bottom: 14px;
-    color: #818cf8;
-    box-shadow: 0 0 20px rgba(99, 102, 241, 0.3);
+    margin-bottom: 16px;
+    color: #e2e8f0;
+    transition: all 0.25s ease;
+}
+
+.viewfinder-box:hover .viewfinder-icon {
+    transform: scale(1.05);
+    color: var(--accent-gold);
+    border-color: rgba(226, 183, 116, 0.4);
+    background: rgba(226, 183, 116, 0.08);
 }
 
 .viewfinder-text {
     font-size: 15px;
-    font-weight: 700;
-    color: #f3f4f6;
+    font-weight: 600;
+    color: #f1f5f9;
     margin-bottom: 4px;
 }
 
 .viewfinder-sub {
-    font-size: 11px;
-    color: #9ca3af;
+    font-size: 12px;
+    color: var(--text-secondary);
 }
 
+/* Minimal Photography Tips */
 .tips-container {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    display: flex;
+    justify-content: space-between;
     gap: 8px;
-    margin-bottom: 20px;
+    margin-bottom: 22px;
 }
 
 .tip-item {
-    background: rgba(31, 41, 55, 0.5);
-    border: 1px solid rgba(55, 65, 81, 0.5);
-    border-radius: 10px;
-    padding: 8px 6px;
+    flex: 1;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
+    padding: 10px 8px;
     text-align: center;
-    font-size: 10px;
-    font-weight: 600;
-    color: #d1d5db;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-secondary);
 }
 
-.tip-item span {
+.tip-item svg {
     display: block;
-    font-size: 14px;
-    margin-bottom: 3px;
+    margin: 0 auto 5px;
+    color: var(--text-tertiary);
 }
 
 /* Action Buttons */
@@ -175,10 +231,10 @@ body {
 
 .btn-scan {
     width: 100%;
-    padding: 14px 18px;
+    padding: 14px 20px;
     border-radius: var(--radius-md);
     font-size: 14px;
-    font-weight: 700;
+    font-weight: 600;
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -190,150 +246,172 @@ body {
 }
 
 .btn-primary {
-    background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
-    color: #ffffff;
-    box-shadow: var(--shadow-glow);
+    background: #ffffff;
+    color: #0b0f19;
+    box-shadow: 0 4px 14px rgba(255, 255, 255, 0.15);
 }
 
-.btn-primary:active {
-    transform: scale(0.98);
+.btn-primary:hover, .btn-primary:active {
+    background: #e2e8f0;
+    transform: translateY(-1px);
 }
 
 .btn-secondary {
-    background: rgba(31, 41, 55, 0.8);
-    border: 1px solid rgba(75, 85, 99, 0.4);
-    color: #e5e7eb;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-light);
+    color: #cbd5e1;
 }
 
-.btn-secondary:active {
-    background: rgba(55, 65, 81, 0.9);
-    transform: scale(0.98);
+.btn-secondary:hover, .btn-secondary:active {
+    background: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
 }
 
 .btn-link {
     background: transparent;
-    color: #9ca3af;
-    font-size: 12px;
+    color: var(--text-secondary);
+    font-size: 12.5px;
     padding: 8px;
     border: none;
     cursor: pointer;
-    margin-top: 6px;
     text-align: center;
+    text-decoration: none;
+    transition: color 0.2s ease;
+    display: block;
 }
 
 .btn-link:hover {
     color: #ffffff;
 }
 
-/* Step 2: Scanning Loading with Laser */
+/* Step 2: Refined Scanning Loading (Clean Photography Loader) */
 .scanning-box {
     position: relative;
     width: 100%;
-    height: 320px;
-    border-radius: var(--radius-md);
+    height: 310px;
+    border-radius: var(--radius-lg);
     overflow: hidden;
     background: #000000;
-    margin-bottom: 20px;
+    margin-bottom: 22px;
     display: flex;
     align-items: center;
     justify-content: center;
+    border: 1px solid var(--border-light);
 }
 
 .scanning-preview-img {
     width: 100%;
     height: 100%;
     object-fit: contain;
-    filter: brightness(0.85);
+    filter: brightness(0.75);
 }
 
-.laser-line {
+/* Subtle, Elegant Shimmer Focus (Not Cheesy Neon Laser) */
+.scan-focus-overlay {
     position: absolute;
-    left: 0;
-    right: 0;
-    height: 3px;
-    background: #10b981;
-    box-shadow: 0 0 15px #10b981, 0 0 25px #10b981;
-    animation: scanLaser 1.8s ease-in-out infinite alternate;
-    z-index: 10;
+    inset: 0;
+    background: linear-gradient(180deg, 
+        transparent 0%, 
+        rgba(255, 255, 255, 0.08) 50%, 
+        transparent 100%);
+    background-size: 100% 200%;
+    animation: elegantShimmer 2.2s ease-in-out infinite;
+    pointer-events: none;
 }
 
-@keyframes scanLaser {
-    0% { top: 5%; }
-    100% { top: 92%; }
+@keyframes elegantShimmer {
+    0% { background-position: 0% 0%; }
+    100% { background-position: 0% 100%; }
+}
+
+.scan-pulse-ring {
+    position: absolute;
+    width: 70px;
+    height: 70px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.6);
+    box-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
+    animation: focusPulse 1.8s ease-out infinite;
+}
+
+@keyframes focusPulse {
+    0% { transform: scale(0.85); opacity: 0.9; }
+    50% { transform: scale(1.1); opacity: 0.4; }
+    100% { transform: scale(0.85); opacity: 0.9; }
 }
 
 .scanning-status {
     text-align: center;
-    padding: 10px 0;
+    padding: 6px 0;
 }
 
 .scanning-title {
     font-size: 16px;
-    font-weight: 700;
-    color: #ffffff;
-    margin-bottom: 4px;
+    font-weight: 600;
+    color: #f8fafc;
+    margin-bottom: 5px;
 }
 
 .scanning-desc {
-    font-size: 12px;
-    color: #9ca3af;
+    font-size: 12.5px;
+    color: var(--text-secondary);
 }
 
 /* Step 3: Match Success Result */
 .result-header {
     text-align: center;
-    margin-bottom: 16px;
+    margin-bottom: 18px;
 }
 
 .badge-success {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    background: rgba(16, 185, 129, 0.15);
-    border: 1px solid rgba(16, 185, 129, 0.4);
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.3);
     color: #34d399;
     padding: 6px 14px;
     border-radius: 9999px;
-    font-size: 13px;
-    font-weight: 700;
-    margin-bottom: 8px;
+    font-size: 12.5px;
+    font-weight: 600;
+    margin-bottom: 6px;
 }
 
 .badge-score {
     font-size: 12px;
-    font-weight: 700;
-    color: #10b981;
+    font-weight: 600;
+    color: var(--text-secondary);
 }
 
 .event-info-card {
-    background: rgba(31, 41, 55, 0.6);
-    border: 1px solid rgba(99, 102, 241, 0.3);
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-light);
     border-radius: var(--radius-md);
-    padding: 12px 14px;
-    margin-bottom: 16px;
+    padding: 14px 16px;
+    margin-bottom: 18px;
     text-align: left;
 }
 
 .event-info-label {
     font-size: 10px;
     text-transform: uppercase;
-    font-weight: 800;
-    letter-spacing: 0.5px;
-    color: #818cf8;
-    margin-bottom: 2px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    color: var(--text-tertiary);
+    margin-bottom: 3px;
 }
 
 .event-info-name {
-    font-size: 15px;
-    font-weight: 800;
+    font-size: 16px;
+    font-weight: 700;
     color: #ffffff;
-    line-height: 1.3;
+    line-height: 1.35;
 }
 
 .event-info-meta {
-    font-size: 11px;
-    color: #9ca3af;
-    margin-top: 4px;
+    font-size: 11.5px;
+    color: var(--text-secondary);
+    margin-top: 5px;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -342,12 +420,13 @@ body {
 
 .result-image-box {
     width: 100%;
-    max-height: 280px;
-    border-radius: var(--radius-md);
+    max-height: 290px;
+    border-radius: var(--radius-lg);
     overflow: hidden;
     background: #000;
-    margin-bottom: 18px;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    margin-bottom: 20px;
+    border: 1px solid var(--border-light);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
     display: flex;
     justify-content: center;
     align-items: center;
@@ -355,55 +434,55 @@ body {
 
 .result-image-box img {
     max-width: 100%;
-    max-height: 280px;
+    max-height: 290px;
     object-fit: contain;
 }
 
 /* Candidate Alternatives */
 .candidates-wrap {
-    margin-top: 18px;
-    border-top: 1px solid rgba(55, 65, 81, 0.7);
-    padding-top: 14px;
+    margin-top: 20px;
+    border-top: 1px solid var(--border-light);
+    padding-top: 16px;
     width: 100%;
 }
 
 .candidates-heading {
     font-size: 11px;
     font-weight: 700;
-    color: #9ca3af;
+    color: var(--text-tertiary);
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    margin-bottom: 10px;
+    margin-bottom: 12px;
 }
 
 .candidates-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(95px, 1fr));
     gap: 10px;
     width: 100%;
     margin-bottom: 12px;
 }
 
 .candidate-card {
-    background: rgba(31, 41, 55, 0.8);
-    border: 1px solid rgba(75, 85, 99, 0.5);
-    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
     overflow: hidden;
     cursor: pointer;
     text-align: center;
     transition: all 0.2s ease;
-    padding-bottom: 5px;
+    padding-bottom: 6px;
 }
 
 .candidate-card:hover, .candidate-card:active {
-    border-color: #10b981;
+    border-color: rgba(255, 255, 255, 0.4);
     transform: translateY(-2px);
-    box-shadow: 0 4px 14px rgba(16, 185, 129, 0.25);
+    background: rgba(255, 255, 255, 0.06);
 }
 
 .candidate-card img {
     width: 100%;
-    height: 100px;
+    height: 105px;
     object-fit: cover;
     display: block;
 }
@@ -417,9 +496,9 @@ body {
 }
 
 .candidate-card-event {
-    font-size: 9px;
-    color: #9ca3af;
-    font-weight: 600;
+    font-size: 9.5px;
+    color: var(--text-secondary);
+    font-weight: 500;
     display: block;
     padding: 0 4px;
     white-space: nowrap;
@@ -432,20 +511,20 @@ body {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    background: rgba(239, 68, 68, 0.15);
-    border: 1px solid rgba(239, 68, 68, 0.4);
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.25);
     color: #f87171;
     padding: 6px 14px;
     border-radius: 9999px;
-    font-size: 13px;
-    font-weight: 700;
-    margin-bottom: 10px;
+    font-size: 12.5px;
+    font-weight: 600;
+    margin-bottom: 12px;
 }
 
 .fail-desc {
-    font-size: 13px;
-    color: #d1d5db;
-    margin-bottom: 18px;
+    font-size: 13.5px;
+    color: var(--text-secondary);
+    margin-bottom: 20px;
     line-height: 1.5;
     text-align: center;
 }
@@ -453,15 +532,15 @@ body {
 /* Footer */
 .scan-footer {
     text-align: center;
-    margin-top: 24px;
-    font-size: 11px;
-    color: #6b7280;
+    margin-top: 26px;
+    font-size: 11.5px;
+    color: var(--text-tertiary);
 }
 
 .scan-footer a {
-    color: #818cf8;
+    color: #cbd5e1;
     text-decoration: none;
-    font-weight: 600;
+    font-weight: 500;
 }
 
 .scan-footer a:hover {

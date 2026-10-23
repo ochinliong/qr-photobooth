@@ -153,17 +153,17 @@ async function executeGlobalScan(fileBlob) {
 
             if (badgeTitle) {
                 badgeTitle.innerText = (data.confidence_level === 'high') 
-                    ? '🎉 Foto Berhasil Ditemukan!' 
-                    : '✨ Foto Terdekat Ditemukan';
+                    ? 'Foto Berhasil Ditemukan' 
+                    : 'Foto Terdekat Ditemukan';
             }
 
-            if (scoreText) scoreText.innerText = `Tingkat Kemiripan: ${match.score}%`;
+            if (scoreText) scoreText.innerText = `Tingkat Kemiripan ${match.score}%`;
             if (eventName) eventName.innerText = match.event_title;
 
             if (eventMeta) {
                 const parts = [];
-                if (match.event_date) parts.push(`📅 ${match.event_date}`);
-                if (match.event_location) parts.push(`📍 ${match.event_location}`);
+                if (match.event_date) parts.push(`${match.event_date}`);
+                if (match.event_location) parts.push(`${match.event_location}`);
                 eventMeta.innerHTML = parts.join(' • ');
             }
 
@@ -198,12 +198,12 @@ async function executeGlobalScan(fileBlob) {
             const fallbackList = document.getElementById('fallbackCandidatesList');
 
             if (data && data.top_candidates && data.top_candidates.length > 0) {
-                if (failBadge) failBadge.innerText = '🔍 Ditemukan Beberapa Foto Terdekat:';
-                if (failMsg) failMsg.innerText = 'Sistem mendeteksi beberapa foto cetakan dengan kemiripan visual terdekat di galeri YUHU. Silahkan ketuk foto Anda jika sesuai:';
+                if (failBadge) failBadge.innerText = 'Ditemukan Beberapa Foto Terdekat';
+                if (failMsg) failMsg.innerText = 'Sistem menemukan beberapa foto cetakan dengan kemiripan visual terdekat. Silahkan ketuk foto Anda di bawah ini jika sesuai:';
                 renderCandidateCards(fallbackList, data.top_candidates, '');
                 if (fallbackList) fallbackList.style.display = 'grid';
             } else {
-                if (failBadge) failBadge.innerText = '❌ Belum Menemukan Foto yang Cocok';
+                if (failBadge) failBadge.innerText = 'Foto Belum Ditemukan';
                 if (failMsg) {
                     failMsg.innerText = (data && (data.message || data.error)) 
                         ? (data.message || data.error) 
@@ -222,7 +222,7 @@ async function executeGlobalScan(fileBlob) {
         const failBadge = document.querySelector('#stepFail .badge-fail');
         const failMsg = document.getElementById('failMsg');
         const fallbackList = document.getElementById('fallbackCandidatesList');
-        if (failBadge) failBadge.innerText = '⚠️ Gangguan Pemindaian';
+        if (failBadge) failBadge.innerText = 'Gangguan Pemindaian';
         if (failMsg) {
             failMsg.innerText = 'Terjadi gangguan jaringan atau pemrosesan gambar. Silahkan coba lagi.';
         }
