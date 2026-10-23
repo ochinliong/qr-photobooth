@@ -358,8 +358,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
 
     <main class="gallery-container">
         <div id="emptyState" class="empty-state" style="<?php echo empty($sessions) ? '' : 'display:none;'; ?>">
-            <p>Belum ada foto yang diunggah untuk event ini.</p>
-            <p>Menunggu foto dari LumaBooth...</p>
+            <p>Belum ada foto yang tersedia untuk acara ini.</p>
         </div>
 
         <div id="masonryGrid" class="masonry-grid" style="<?php echo empty($sessions) ? 'display:none;' : ''; ?>">
