@@ -19,8 +19,8 @@ $app_base_url = rtrim($base_url ?? 'https://files.yuhu.co.id', '/');
     <div class="scan-container">
         <!-- Header -->
         <header class="scan-header">
-            <a href="<?= htmlspecialchars($app_base_url) ?>">
-                <img src="../client/logo.png" alt="YUHU Photobooth" class="scan-logo" onerror="this.style.display='none'">
+            <a href="<?= htmlspecialchars($app_base_url) ?>" class="scan-logo-link">
+                <img src="logo-white.png?v=<?php echo @filemtime(__DIR__ . '/logo-white.png') ?: '1'; ?>" alt="YUHU Photobooth" class="scan-logo" onerror="this.onerror=null; this.src='../client/logo.png'; this.classList.add('filter-white');">
             </a>
             <div class="scan-pill-badge">
                 <span class="dot"></span>

@@ -76,12 +76,31 @@ button, a, input, .viewfinder-box, .session-tab-btn, .candidate-card {
     width: 100%;
 }
 
+.scan-logo-link {
+    display: inline-block;
+    line-height: 1;
+    text-decoration: none;
+    margin-bottom: 14px;
+}
+
 .scan-logo {
-    height: 44px;
+    height: 38px;
+    max-width: 170px;
     width: auto;
     object-fit: contain;
-    margin-bottom: 14px;
-    filter: drop-shadow(0 2px 8px rgba(0,0,0,0.3));
+    display: block;
+    margin: 0 auto;
+    filter: drop-shadow(0 2px 10px rgba(0, 0, 0, 0.5));
+    transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.scan-logo:hover, .scan-logo:active {
+    transform: scale(1.02);
+    opacity: 0.95;
+}
+
+.scan-logo.filter-white {
+    filter: brightness(0) invert(1) drop-shadow(0 2px 10px rgba(0, 0, 0, 0.5));
 }
 
 .scan-pill-badge {
