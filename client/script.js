@@ -586,3 +586,29 @@ window.addEventListener('click', function(e) {
         closeVisualSearchModal();
     }
 });
+
+// Auto-open session jika datang dari scan.yuhu.co.id dengan parameter ?session= atau ?photo=
+document.addEventListener('DOMContentLoaded', function() {
+    const params = new URLSearchParams(window.location.search);
+    const targetSession = params.get('session') || params.get('photo');
+    if (targetSession && typeof gallerySessions !== 'undefined' && Array.isArray(gallerySessions)) {
+        for (let i = 0; i < gallerySessions.length; i++) {
+            const sess = gallerySessions[i];
+            const match = sess.files.some(f => 
+                f.file.includes(targetSession) || 
+                f.path.includes(targetSession) || 
+                (sess.id && sess.id.includes(targetSession))
+            );
+            if (match) {
+                setTimeout(() => {
+                    const gridItems = document.querySelectorAll('.grid-item');
+                    if (gridItems[i]) {
+                        gridItems[i].scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                    openSession(i);
+                }, 400);
+                break;
+            }
+        }
+    }
+});

@@ -554,6 +554,9 @@ $sessions = array_values($sessions_map);
                     <a href="gallery.php<?= $selected_event ? '?id=' . $selected_event['id'] : '' ?>" class="px-3.5 py-1.5 rounded-lg text-xs md:text-sm font-bold bg-blue-600 text-white shadow-sm transition">
                         🖼️ Kelola Foto & Galeri
                     </a>
+                    <a href="../scan/" target="_blank" class="px-3.5 py-1.5 rounded-lg text-xs md:text-sm font-semibold text-purple-700 hover:text-purple-900 hover:bg-purple-50 transition flex items-center gap-1">
+                        📸 Scan Foto Cetak ↗
+                    </a>
                 </div>
             </div>
             <div class="flex items-center gap-4 text-sm font-medium">

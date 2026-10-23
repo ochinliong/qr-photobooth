@@ -23,7 +23,12 @@ RewriteEngine On
     php_value max_input_time 300
 </IfModule>
 
-# Abaikan jika file atau folder fisik benar-benar ada (seperti /admin, /operator, /uploads)
+# Routing otomatis untuk subdomain scan.yuhu.co.id jika document root disatukan
+RewriteCond %{HTTP_HOST} ^scan\.yuhu\.co\.id$ [NC]
+RewriteCond %{REQUEST_URI} !^/scan/
+RewriteRule ^(.*)$ scan/$1 [L,QSA]
+
+# Abaikan jika file atau folder fisik benar-benar ada (seperti /admin, /operator, /uploads, /scan)
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 
