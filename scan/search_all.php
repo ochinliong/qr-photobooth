@@ -583,8 +583,8 @@ $bestMatch = $results[0] ?? null;
 $isHighMatch = ($bestMatch && $bestMatch['score'] >= 48.0);
 $isPossibleMatch = ($bestMatch && $bestMatch['score'] >= 32.0);
 
-// Sertakan file media lengkap HANYA untuk sesi ini (Privasi Terjaga: Tidak bisa lihat galeri orang lain)
-if ($bestMatch) {
+// Sertakan file media lengkap HANYA untuk sesi ini (Eksklusif: Privasi 100% terjaga)
+if ($bestMatch && ($isHighMatch || $isPossibleMatch)) {
     $bestMatch['session_files'] = collectSessionMedia(
         $bestMatch['event_dir'],
         $bestMatch['base_id'],
@@ -592,27 +592,17 @@ if ($bestMatch) {
         $bestMatch['event_folder']
     );
     unset($bestMatch['event_dir']);
+} else {
+    $bestMatch = null;
 }
-
-$topCandidates = array_slice($results, 0, 5);
-foreach ($topCandidates as &$candItem) {
-    $candItem['session_files'] = collectSessionMedia(
-        $candItem['event_dir'],
-        $candItem['base_id'],
-        $app_base_url,
-        $candItem['event_folder']
-    );
-    unset($candItem['event_dir']);
-}
-unset($candItem);
 
 echo json_encode([
     'success' => true,
-    'match_found' => ($isHighMatch || $isPossibleMatch),
+    'match_found' => ($bestMatch !== null),
     'confidence_level' => $isHighMatch ? 'high' : ($isPossibleMatch ? 'medium' : 'low'),
     'best_match' => $bestMatch,
     'highest_score' => $bestMatch ? $bestMatch['score'] : 0,
-    'top_candidates' => $topCandidates,
+    'top_candidates' => [],
     'total_events_searched' => count($all_events),
     'total_photos_searched' => $total_photos_count
 ]);

@@ -469,26 +469,17 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
                     </a>
                 </div>
 
-                <!-- Kandidat Alternatif Lainnya (Jika ada pilihan mendekati) -->
-                <div id="topCandidatesContainer" class="top-candidates-container" style="display:none;">
-                    <div class="candidates-divider">
-                        <span>Bukan foto di atas? Coba cek alternatif ini:</span>
-                    </div>
-                    <div id="topCandidatesList" class="candidates-grid"></div>
-                </div>
-
                 <button type="button" onclick="resetVisualSearch()" class="btn-visual-text" style="margin-top:12px;">
                     Cari Cetakan Lain
                 </button>
             </div>
 
-            <!-- Step 4: Tidak Ditemukan / Tampilkan Kandidat Terdekat -->
+            <!-- Step 4: Tidak Ditemukan -->
             <div id="visualSearchStepFail" class="visual-search-step" style="display:none;">
-                <div class="match-fail-badge">🔍 Ditemukan Beberapa Foto yang Mirip:</div>
+                <div class="match-fail-badge">❌ Foto Belum Ditemukan</div>
                 <p class="match-fail-desc" id="matchFailMsg">
-                    Silahkan ketuk foto Anda di bawah ini jika sesuai:
+                    Pastikan foto cetakan diambil tegak lurus dan pencahayaan cukup.
                 </p>
-                <div id="fallbackCandidatesList" class="candidates-grid" style="margin-bottom:15px;"></div>
                 <div class="visual-action-buttons">
                     <button type="button" onclick="resetVisualSearch()" class="btn-visual-action btn-camera">
                         📸 Coba Foto Ulang Cetakan

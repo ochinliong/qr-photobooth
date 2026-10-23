@@ -539,8 +539,8 @@ echo json_encode([
     'success' => true,
     'match_found' => ($isHighMatch || $isPossibleMatch),
     'confidence_level' => $isHighMatch ? 'high' : ($isPossibleMatch ? 'medium' : 'low'),
-    'best_match' => $bestMatch,
+    'best_match' => ($isHighMatch || $isPossibleMatch) ? $bestMatch : null,
     'highest_score' => $bestMatch ? $bestMatch['score'] : 0,
-    'top_candidates' => array_slice($results, 0, 4)
+    'top_candidates' => []
 ]);
 exit;

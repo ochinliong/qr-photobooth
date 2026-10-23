@@ -317,12 +317,6 @@ function resetVisualSearch() {
     if (stepLoading) stepLoading.style.display = 'none';
     if (stepSuccess) stepSuccess.style.display = 'none';
     if (stepFail) stepFail.style.display = 'none';
-    const topList = document.getElementById('topCandidatesList');
-    if (topList) topList.innerHTML = '';
-    const fallbackList = document.getElementById('fallbackCandidatesList');
-    if (fallbackList) fallbackList.innerHTML = '';
-    const topCont = document.getElementById('topCandidatesContainer');
-    if (topCont) topCont.style.display = 'none';
     const camInput = document.getElementById('visualCameraInput');
     const galInput = document.getElementById('visualGalleryInput');
     if (camInput) camInput.value = '';
@@ -531,37 +525,17 @@ async function executeVisualSearch(file) {
                 }
             }
 
-            // Tampilkan alternatif kandidat lain di bawah foto utama jika ada
-            const topCandidatesList = document.getElementById('topCandidatesList');
-            const topCandidatesCont = document.getElementById('topCandidatesContainer');
-            if (topCandidatesList && topCandidatesCont) {
-                const count = renderCandidatesList(topCandidatesList, data.top_candidates, match.path);
-                topCandidatesCont.style.display = count > 0 ? 'block' : 'none';
-            }
-
             stepSuccess.style.display = 'block';
         } else {
-            // Belum Menemukan Kecocokan Pasti -> Tampilkan Kandidat Terdekat jika ada
+            // Belum Menemukan Kecocokan Pasti
             const failBadge = document.querySelector('#visualSearchStepFail .match-fail-badge');
             const failMsg = document.getElementById('matchFailMsg');
-            const fallbackList = document.getElementById('fallbackCandidatesList');
 
-            if (data && data.top_candidates && data.top_candidates.length > 0) {
-                if (failBadge) failBadge.innerText = '🔍 Ditemukan Beberapa Foto Terdekat:';
-                if (failMsg) failMsg.innerText = 'Kemiripan sedikit di bawah standar, namun sistem menemukan foto terdekat. Silahkan ketuk foto Anda jika sesuai:';
-                renderCandidatesList(fallbackList, data.top_candidates, '');
-                if (fallbackList) fallbackList.style.display = 'grid';
-            } else {
-                if (failBadge) failBadge.innerText = '❌ Belum Menemukan Foto yang Cocok';
-                if (failMsg) {
-                    failMsg.innerText = (data && (data.message || data.error)) 
-                        ? (data.message || data.error) 
-                        : 'Pastikan foto cetakan diambil tegak lurus dan pencahayaan cukup.';
-                }
-                if (fallbackList) {
-                    fallbackList.innerHTML = '';
-                    fallbackList.style.display = 'none';
-                }
+            if (failBadge) failBadge.innerText = '❌ Belum Menemukan Foto yang Cocok';
+            if (failMsg) {
+                failMsg.innerText = (data && (data.message || data.error)) 
+                    ? (data.message || data.error) 
+                    : 'Pastikan foto cetakan diambil tegak lurus dan pencahayaan cukup.';
             }
 
             stepFail.style.display = 'block';
@@ -570,12 +544,10 @@ async function executeVisualSearch(file) {
         stepLoading.style.display = 'none';
         const failBadge = document.querySelector('#visualSearchStepFail .match-fail-badge');
         const failMsg = document.getElementById('matchFailMsg');
-        const fallbackList = document.getElementById('fallbackCandidatesList');
         if (failBadge) failBadge.innerText = '⚠️ Gangguan Pemindaian';
         if (failMsg) {
             failMsg.innerText = 'Terjadi gangguan jaringan atau pemrosesan gambar. Silahkan coba lagi.';
         }
-        if (fallbackList) fallbackList.style.display = 'none';
         stepFail.style.display = 'block';
     }
 }

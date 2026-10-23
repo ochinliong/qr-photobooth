@@ -142,18 +142,12 @@ $app_base_url = rtrim($base_url ?? 'https://files.yuhu.co.id', '/');
                     <span>Hanya menampilkan sesi foto Anda (Arsip galeri lain dirahasiakan).</span>
                 </div>
 
-                <!-- Kandidat Alternatif Lainnya -->
-                <div id="topCandidatesContainer" class="candidates-wrap" style="display:none;">
-                    <div class="candidates-heading">Bukan foto Anda? Cek alternatif terdekat:</div>
-                    <div id="topCandidatesList" class="candidates-grid"></div>
-                </div>
-
                 <button type="button" onclick="resetScan()" class="btn-link" style="width:100%; margin-top:14px;">
                     Pindai Foto Cetakan Lain
                 </button>
             </div>
 
-            <!-- Step 4: Tidak Ditemukan / Tampilkan Kandidat Terdekat -->
+            <!-- Step 4: Tidak Ditemukan -->
             <div id="stepFail" style="display:none;">
                 <div style="text-align:center;">
                     <div class="badge-fail">Foto Belum Ditemukan</div>
@@ -161,8 +155,6 @@ $app_base_url = rtrim($base_url ?? 'https://files.yuhu.co.id', '/');
                         Pastikan foto cetakan diambil tegak lurus dan pencahayaan ruangan cukup.
                     </p>
                 </div>
-
-                <div id="fallbackCandidatesList" class="candidates-grid" style="margin-bottom:18px;"></div>
 
                 <div class="btn-group">
                     <button type="button" onclick="resetScan()" class="btn-scan btn-primary">

@@ -147,14 +147,6 @@ function resetScan() {
     if (camInput) camInput.value = '';
     if (galInput) galInput.value = '';
 
-    const topList = document.getElementById('topCandidatesList');
-    if (topList) topList.innerHTML = '';
-    const topCont = document.getElementById('topCandidatesContainer');
-    if (topCont) topCont.style.display = 'none';
-
-    const fallbackList = document.getElementById('fallbackCandidatesList');
-    if (fallbackList) fallbackList.innerHTML = '';
-
     currentSessionMediaList = [];
     currentActiveMediaIndex = 0;
 }
@@ -468,39 +460,6 @@ async function handleDownloadOrSaveMedia() {
     }
 }
 
-// Render kartu-kartu alternatif terdekat.
-// CATATAN PRIVASI: Klik pada kartu HANYA menampilkan sesi milik kartu tersebut,
-// TIDAK PERNAH membuka atau membocorkan arsip galeri acara!
-function renderCandidateCards(container, candidates, excludePhotoUrl) {
-    if (!container) return 0;
-    container.innerHTML = '';
-    const filtered = (candidates || []).filter(c => c && c.photo_url && c.photo_url !== excludePhotoUrl);
-    if (filtered.length === 0) return 0;
-
-    filtered.forEach(cand => {
-        const card = document.createElement('div');
-        card.className = 'candidate-card';
-        card.title = `Lihat hasil foto sesi ini (${cand.event_title})`;
-        card.innerHTML = `
-            <img src="${cand.photo_url}" alt="Kandidat Foto" loading="lazy">
-            <span class="candidate-card-score">${cand.score}% Cocok</span>
-            <span class="candidate-card-event">${cand.event_title}</span>
-        `;
-        card.addEventListener('click', () => {
-            stepLoading.style.display = 'none';
-            stepFail.style.display = 'none';
-            stepSuccess.style.display = 'block';
-
-            displayMatchedSession(cand, 'Foto Alternatif Terpilih');
-
-            const cardElem = document.querySelector('.scan-card');
-            if (cardElem) cardElem.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        });
-        container.appendChild(card);
-    });
-    return filtered.length;
-}
-
 async function executeGlobalScan(fileBlob) {
     const formData = new FormData();
     formData.append('photo', fileBlob, 'scan_query.jpg');
@@ -521,38 +480,17 @@ async function executeGlobalScan(fileBlob) {
                 : 'Foto Terdekat Ditemukan';
 
             displayMatchedSession(match, badgeTitleText);
-
-            // Tampilkan foto kandidat alternatif lainnya jika ada
-            const topCandidatesList = document.getElementById('topCandidatesList');
-            const topCandidatesCont = document.getElementById('topCandidatesContainer');
-            if (topCandidatesList && topCandidatesCont) {
-                const count = renderCandidateCards(topCandidatesList, data.top_candidates, match.photo_url);
-                topCandidatesCont.style.display = count > 0 ? 'block' : 'none';
-            }
-
             stepSuccess.style.display = 'block';
         } else {
             // Belum Menemukan Kecocokan Pasti
             const failBadge = document.querySelector('#stepFail .badge-fail');
             const failMsg = document.getElementById('failMsg');
-            const fallbackList = document.getElementById('fallbackCandidatesList');
 
-            if (data && data.top_candidates && data.top_candidates.length > 0) {
-                if (failBadge) failBadge.innerText = 'Ditemukan Beberapa Foto Terdekat';
-                if (failMsg) failMsg.innerText = 'Sistem menemukan beberapa foto dengan kemiripan visual terdekat. Silahkan ketuk foto Anda di bawah ini jika sesuai:';
-                renderCandidateCards(fallbackList, data.top_candidates, '');
-                if (fallbackList) fallbackList.style.display = 'grid';
-            } else {
-                if (failBadge) failBadge.innerText = 'Foto Belum Ditemukan';
-                if (failMsg) {
-                    failMsg.innerText = (data && (data.message || data.error)) 
-                        ? (data.message || data.error) 
-                        : 'Pastikan foto cetakan diambil tegak lurus, tidak terpotong, dan dengan pencahayaan yang cukup.';
-                }
-                if (fallbackList) {
-                    fallbackList.innerHTML = '';
-                    fallbackList.style.display = 'none';
-                }
+            if (failBadge) failBadge.innerText = 'Foto Belum Ditemukan';
+            if (failMsg) {
+                failMsg.innerText = (data && (data.message || data.error)) 
+                    ? (data.message || data.error) 
+                    : 'Pastikan foto cetakan diambil tegak lurus, tidak terpotong, dan dengan pencahayaan yang cukup.';
             }
 
             stepFail.style.display = 'block';
@@ -561,12 +499,10 @@ async function executeGlobalScan(fileBlob) {
         stepLoading.style.display = 'none';
         const failBadge = document.querySelector('#stepFail .badge-fail');
         const failMsg = document.getElementById('failMsg');
-        const fallbackList = document.getElementById('fallbackCandidatesList');
         if (failBadge) failBadge.innerText = 'Gangguan Pemindaian';
         if (failMsg) {
             failMsg.innerText = 'Terjadi gangguan jaringan atau pemrosesan gambar. Silahkan coba lagi.';
         }
-        if (fallbackList) fallbackList.style.display = 'none';
         stepFail.style.display = 'block';
     }
 }
