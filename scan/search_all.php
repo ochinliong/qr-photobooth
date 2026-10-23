@@ -467,6 +467,58 @@ if (empty($all_candidate_signatures)) {
     exit;
 }
 
+// Helper untuk mengumpulkan seluruh file (Foto Cetak, Video, Foto Satuan) HANYA untuk sesi ini
+function collectSessionMedia($dirPath, $baseId, $app_base_url, $folderName) {
+    $encodedFolder = rawurlencode($folderName);
+    $mediaList = [];
+    if (!is_dir($dirPath) || empty($baseId)) return $mediaList;
+
+    $it = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($dirPath, RecursiveDirectoryIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::SELF_FIRST
+    );
+
+    foreach ($it as $item) {
+        if ($item->isFile()) {
+            $fname = $item->getFilename();
+            if (strpos($fname, $baseId) !== false && strpos($fname, '.part_') === false && strpos($fname, 'thumb') === false) {
+                $ext = strtolower($item->getExtension());
+                if (in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'mp4', 'mov', 'webm', 'gif'])) {
+                    $rel = str_replace('\\', '/', substr($item->getPathname(), strlen($dirPath) + 1));
+                    $encodedPath = implode('/', array_map('rawurlencode', explode('/', $rel)));
+                    $url = $app_base_url . '/client/photos/' . $encodedFolder . '/' . $encodedPath;
+                    $isVid = in_array($ext, ['mp4', 'mov', 'webm']);
+                    $isPrint = (strpos(strtolower($rel), 'prints/') !== false || strpos(strtolower($rel), 'print') !== false);
+                    
+                    $label = 'Foto Satuan';
+                    if ($isPrint) $label = 'Foto Cetak (Strip)';
+                    elseif ($isVid) $label = 'Video Animasi';
+                    elseif (strpos(strtolower($rel), 'animated/') !== false) $label = 'Animasi GIF';
+
+                    $mediaList[] = [
+                        'file' => $rel,
+                        'name' => $fname,
+                        'url' => $url,
+                        'is_video' => $isVid,
+                        'is_print' => $isPrint,
+                        'label' => $label,
+                        'ext' => $ext
+                    ];
+                }
+            }
+        }
+    }
+
+    // Urutkan: Foto Cetak di urutan pertama, Video kedua, Foto Satuan berikutnya
+    usort($mediaList, function($a, $b) {
+        $priorityA = $a['is_print'] ? 1 : ($a['is_video'] ? 2 : 3);
+        $priorityB = $b['is_print'] ? 1 : ($b['is_video'] ? 2 : 3);
+        return $priorityA <=> $priorityB;
+    });
+
+    return $mediaList;
+}
+
 // ============================================================================
 // 5. PENCOCOKAN DENGAN SELURUH FOTO DI SERVER (GLOBAL MATCHING)
 // ============================================================================
@@ -504,16 +556,12 @@ foreach ($all_candidate_signatures as $item) {
         $baseId = preg_replace('/(_mp4|_gif|\.[a-zA-Z0-9]+)$/i', '', $fname);
     }
 
-    // Direct link ke sesi lightbox pada galeri acara
-    $sessionUrl = $app_base_url . '/client/' . rawurlencode($ev['folder']) . '?session=' . rawurlencode($baseId);
-
     $results[] = [
         'event_title' => $ev['title'],
         'event_folder' => $ev['folder'],
+        'event_dir' => $ev['dir_path'],
         'event_location' => $ev['location'],
         'event_date' => $ev['date'],
-        'event_url' => $ev['url'],
-        'session_url' => $sessionUrl,
         'file' => $cand['file'],
         'photo_url' => $fullPhotoUrl,
         'base_id' => $baseId,
@@ -534,13 +582,36 @@ $bestMatch = $results[0] ?? null;
 $isHighMatch = ($bestMatch && $bestMatch['score'] >= 48.0);
 $isPossibleMatch = ($bestMatch && $bestMatch['score'] >= 32.0);
 
+// Sertakan file media lengkap HANYA untuk sesi ini (Privasi Terjaga: Tidak bisa lihat galeri orang lain)
+if ($bestMatch) {
+    $bestMatch['session_files'] = collectSessionMedia(
+        $bestMatch['event_dir'],
+        $bestMatch['base_id'],
+        $app_base_url,
+        $bestMatch['event_folder']
+    );
+    unset($bestMatch['event_dir']);
+}
+
+$topCandidates = array_slice($results, 0, 5);
+foreach ($topCandidates as &$candItem) {
+    $candItem['session_files'] = collectSessionMedia(
+        $candItem['event_dir'],
+        $candItem['base_id'],
+        $app_base_url,
+        $candItem['event_folder']
+    );
+    unset($candItem['event_dir']);
+}
+unset($candItem);
+
 echo json_encode([
     'success' => true,
     'match_found' => ($isHighMatch || $isPossibleMatch),
     'confidence_level' => $isHighMatch ? 'high' : ($isPossibleMatch ? 'medium' : 'low'),
     'best_match' => $bestMatch,
     'highest_score' => $bestMatch ? $bestMatch['score'] : 0,
-    'top_candidates' => array_slice($results, 0, 5),
+    'top_candidates' => $topCandidates,
     'total_events_searched' => count($all_events),
     'total_photos_searched' => $total_photos_count
 ]);

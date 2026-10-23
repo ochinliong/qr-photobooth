@@ -2,6 +2,10 @@
  * ============================================================================
  * YUHU PHOTOBOOTH - GLOBAL SCAN (scan.yuhu.co.id) JAVASCRIPT ENGINE
  * ============================================================================
+ * Privasi Ketat: Hanya menampilkan dan mengunduh file sesi foto milik tamu
+ * yang dipindai (Foto Cetak, Video Animasi, Foto Satuan). Tidak membuka akses
+ * ke seluruh galeri acara.
+ * ============================================================================
  */
 
 const stepInit = document.getElementById('stepInit');
@@ -9,11 +13,21 @@ const stepLoading = document.getElementById('stepLoading');
 const stepSuccess = document.getElementById('stepSuccess');
 const stepFail = document.getElementById('stepFail');
 
+let currentSessionMediaList = [];
+let currentActiveMediaIndex = 0;
+
 function resetScan() {
     if (stepInit) stepInit.style.display = 'block';
     if (stepLoading) stepLoading.style.display = 'none';
     if (stepSuccess) stepSuccess.style.display = 'none';
     if (stepFail) stepFail.style.display = 'none';
+
+    // Pause video jika sedang menyala
+    const resultVideo = document.getElementById('matchResultVideo');
+    if (resultVideo) {
+        resultVideo.pause();
+        resultVideo.src = '';
+    }
 
     const camInput = document.getElementById('cameraInput');
     const galInput = document.getElementById('galleryInput');
@@ -27,6 +41,9 @@ function resetScan() {
 
     const fallbackList = document.getElementById('fallbackCandidatesList');
     if (fallbackList) fallbackList.innerHTML = '';
+
+    currentSessionMediaList = [];
+    currentActiveMediaIndex = 0;
 }
 
 // Kompresi cepat & auto-orientasi EXIF via Canvas di browser HP
@@ -98,6 +115,133 @@ async function handleScanFile(input) {
     }
 }
 
+// Menampilkan media sesi (Foto Strip, Video, Foto Satuan)
+function displayMatchedSession(matchData, badgeLabel = '') {
+    const badgeTitle = document.getElementById('matchBadgeTitle');
+    const scoreText = document.getElementById('matchScoreText');
+    const eventName = document.getElementById('matchEventName');
+    const eventMeta = document.getElementById('matchEventMeta');
+
+    if (badgeTitle && badgeLabel) {
+        badgeTitle.innerText = badgeLabel;
+    }
+    if (scoreText) {
+        scoreText.innerText = `Tingkat Kemiripan ${matchData.score}%`;
+    }
+    if (eventName) {
+        eventName.innerText = matchData.event_title || 'Acara Photobooth';
+    }
+    if (eventMeta) {
+        const parts = [];
+        if (matchData.event_date) parts.push(matchData.event_date);
+        if (matchData.event_location) parts.push(matchData.event_location);
+        eventMeta.innerHTML = parts.join(' • ');
+    }
+
+    // Persiapkan daftar media sesi
+    if (Array.isArray(matchData.session_files) && matchData.session_files.length > 0) {
+        currentSessionMediaList = matchData.session_files;
+    } else {
+        currentSessionMediaList = [{
+            file: matchData.file,
+            name: matchData.file ? matchData.file.split('/').pop() : 'foto_photobooth.jpg',
+            url: matchData.photo_url,
+            is_video: false,
+            is_print: true,
+            label: 'Foto Cetak'
+        }];
+    }
+
+    // Render tab switcher jika terdapat lebih dari 1 file dalam sesi
+    const tabsContainer = document.getElementById('sessionTabs');
+    if (tabsContainer) {
+        tabsContainer.innerHTML = '';
+        if (currentSessionMediaList.length > 1) {
+            // Hitung label duplikat
+            const labelCounts = {};
+            currentSessionMediaList.forEach(m => {
+                const baseLbl = m.label || 'Media';
+                labelCounts[baseLbl] = (labelCounts[baseLbl] || 0) + 1;
+            });
+
+            const labelIndices = {};
+            currentSessionMediaList.forEach((media, idx) => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = `session-tab-btn ${idx === 0 ? 'active' : ''}`;
+                
+                const baseLbl = media.label || 'Media';
+                let displayLbl = baseLbl;
+                if (labelCounts[baseLbl] > 1 && baseLbl === 'Foto Satuan') {
+                    labelIndices[baseLbl] = (labelIndices[baseLbl] || 0) + 1;
+                    displayLbl = `${baseLbl} ${labelIndices[baseLbl]}`;
+                }
+
+                btn.innerText = displayLbl;
+                btn.addEventListener('click', () => switchSessionMedia(idx));
+                tabsContainer.appendChild(btn);
+            });
+            tabsContainer.style.display = 'flex';
+        } else {
+            tabsContainer.style.display = 'none';
+        }
+    }
+
+    // Tampilkan media pertama
+    switchSessionMedia(0);
+}
+
+// Beralih antar file media dalam satu sesi (Foto / Video)
+function switchSessionMedia(index) {
+    if (!currentSessionMediaList || !currentSessionMediaList[index]) return;
+    currentActiveMediaIndex = index;
+
+    const media = currentSessionMediaList[index];
+    const resultImg = document.getElementById('matchResultImg');
+    const resultVideo = document.getElementById('matchResultVideo');
+    const btnDownload = document.getElementById('btnDownloadCurrent');
+    const btnDownloadText = document.getElementById('btnDownloadText');
+
+    // Update tab active classes
+    const tabButtons = document.querySelectorAll('.session-tab-btn');
+    tabButtons.forEach((btn, i) => {
+        if (i === index) btn.classList.add('active');
+        else btn.classList.remove('active');
+    });
+
+    if (media.is_video) {
+        if (resultImg) resultImg.style.display = 'none';
+        if (resultVideo) {
+            resultVideo.style.display = 'block';
+            resultVideo.src = media.url;
+            resultVideo.load();
+        }
+        if (btnDownloadText) btnDownloadText.innerText = 'Download Video Ini';
+    } else {
+        if (resultVideo) {
+            resultVideo.pause();
+            resultVideo.style.display = 'none';
+            resultVideo.src = '';
+        }
+        if (resultImg) {
+            resultImg.style.display = 'block';
+            resultImg.src = media.url;
+        }
+        if (btnDownloadText) {
+            btnDownloadText.innerText = media.is_print ? 'Download Foto Cetak' : 'Download Foto Ini';
+        }
+    }
+
+    if (btnDownload) {
+        btnDownload.href = media.url;
+        const fileName = media.name || (media.url ? media.url.split('/').pop() : 'photobooth_file');
+        btnDownload.setAttribute('download', fileName);
+    }
+}
+
+// Render kartu-kartu alternatif terdekat.
+// CATATAN PRIVASI: Klik pada kartu HANYA menampilkan sesi milik kartu tersebut,
+// TIDAK PERNAH membuka atau membocorkan arsip galeri acara!
 function renderCandidateCards(container, candidates, excludePhotoUrl) {
     if (!container) return 0;
     container.innerHTML = '';
@@ -107,20 +251,23 @@ function renderCandidateCards(container, candidates, excludePhotoUrl) {
     filtered.forEach(cand => {
         const card = document.createElement('div');
         card.className = 'candidate-card';
-        card.title = `Buka foto di acara: ${cand.event_title}`;
+        card.title = `Lihat hasil foto sesi ini (${cand.event_title})`;
         card.innerHTML = `
             <img src="${cand.photo_url}" alt="Kandidat Foto" loading="lazy">
             <span class="candidate-card-score">${cand.score}% Cocok</span>
             <span class="candidate-card-event">${cand.event_title}</span>
         `;
         card.addEventListener('click', () => {
-            if (cand.session_url) {
-                window.location.href = cand.session_url;
-            } else if (cand.event_url) {
-                window.location.href = cand.event_url;
-            } else {
-                window.open(cand.photo_url, '_blank');
-            }
+            // Tampilkan sesi foto ini langsung di layar hasil tanpa membuka galeri acara
+            stepLoading.style.display = 'none';
+            stepFail.style.display = 'none';
+            stepSuccess.style.display = 'block';
+
+            displayMatchedSession(cand, 'Foto Alternatif Terpilih');
+
+            // Scroll halus ke kartu hasil
+            const cardElem = document.querySelector('.scan-card');
+            if (cardElem) cardElem.scrollIntoView({ behavior: 'smooth', block: 'start' });
         });
         container.appendChild(card);
     });
@@ -142,45 +289,11 @@ async function executeGlobalScan(fileBlob) {
 
         if (data && data.success && data.match_found && data.best_match) {
             const match = data.best_match;
-            const badgeTitle = document.getElementById('matchBadgeTitle');
-            const scoreText = document.getElementById('matchScoreText');
-            const eventName = document.getElementById('matchEventName');
-            const eventMeta = document.getElementById('matchEventMeta');
-            const resultImg = document.getElementById('matchResultImg');
-            const btnOpenSession = document.getElementById('btnOpenSession');
-            const btnOpenGallery = document.getElementById('btnOpenGallery');
-            const btnDownload = document.getElementById('btnDownloadMatched');
+            const badgeTitleText = (data.confidence_level === 'high') 
+                ? 'Foto Berhasil Ditemukan' 
+                : 'Foto Terdekat Ditemukan';
 
-            if (badgeTitle) {
-                badgeTitle.innerText = (data.confidence_level === 'high') 
-                    ? 'Foto Berhasil Ditemukan' 
-                    : 'Foto Terdekat Ditemukan';
-            }
-
-            if (scoreText) scoreText.innerText = `Tingkat Kemiripan ${match.score}%`;
-            if (eventName) eventName.innerText = match.event_title;
-
-            if (eventMeta) {
-                const parts = [];
-                if (match.event_date) parts.push(`${match.event_date}`);
-                if (match.event_location) parts.push(`${match.event_location}`);
-                eventMeta.innerHTML = parts.join(' • ');
-            }
-
-            if (resultImg) resultImg.src = match.photo_url;
-
-            if (btnOpenSession) {
-                btnOpenSession.href = match.session_url || match.event_url;
-            }
-
-            if (btnOpenGallery) {
-                btnOpenGallery.href = match.event_url;
-            }
-
-            if (btnDownload) {
-                btnDownload.href = match.photo_url;
-                btnDownload.setAttribute('download', match.file.split('/').pop());
-            }
+            displayMatchedSession(match, badgeTitleText);
 
             // Tampilkan foto kandidat alternatif lainnya jika ada
             const topCandidatesList = document.getElementById('topCandidatesList');
@@ -199,7 +312,7 @@ async function executeGlobalScan(fileBlob) {
 
             if (data && data.top_candidates && data.top_candidates.length > 0) {
                 if (failBadge) failBadge.innerText = 'Ditemukan Beberapa Foto Terdekat';
-                if (failMsg) failMsg.innerText = 'Sistem menemukan beberapa foto cetakan dengan kemiripan visual terdekat. Silahkan ketuk foto Anda di bawah ini jika sesuai:';
+                if (failMsg) failMsg.innerText = 'Sistem menemukan beberapa foto dengan kemiripan visual terdekat. Silahkan ketuk foto Anda di bawah ini jika sesuai:';
                 renderCandidateCards(fallbackList, data.top_candidates, '');
                 if (fallbackList) fallbackList.style.display = 'grid';
             } else {

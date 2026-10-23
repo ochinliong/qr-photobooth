@@ -106,27 +106,30 @@ $app_base_url = rtrim($base_url ?? 'https://files.yuhu.co.id', '/');
                     <div class="event-info-meta" id="matchEventMeta"></div>
                 </div>
 
-                <div class="result-image-box">
+                <!-- Tabs jika dalam 1 sesi terdapat beberapa media (Foto Cetak, Video, Foto Satuan) -->
+                <div class="session-tabs" id="sessionTabs" style="display:none;"></div>
+
+                <!-- Box Tampilan Media (Foto / Video) -->
+                <div class="result-image-box" id="resultMediaBox">
                     <img id="matchResultImg" src="" alt="Foto Ditemukan">
+                    <video id="matchResultVideo" src="" controls playsinline class="result-video" style="display:none;"></video>
                 </div>
 
                 <div class="btn-group">
-                    <a id="btnOpenSession" href="#" class="btn-scan btn-primary">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                        Buka Sesi Lengkap (Foto & Video)
-                    </a>
-                    <a id="btnDownloadMatched" href="#" download class="btn-scan btn-secondary">
+                    <a id="btnDownloadCurrent" href="#" download class="btn-scan btn-primary">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                        Download Foto Ini
+                        <span id="btnDownloadText">Download Foto Ini</span>
                     </a>
-                    <a id="btnOpenGallery" href="#" class="btn-link">
-                        Lihat Seluruh Galeri Acara Ini →
-                    </a>
+                </div>
+
+                <div class="privacy-badge">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                    <span>Hanya menampilkan sesi foto Anda (Arsip galeri lain dirahasiakan).</span>
                 </div>
 
                 <!-- Kandidat Alternatif Lainnya -->
                 <div id="topCandidatesContainer" class="candidates-wrap" style="display:none;">
-                    <div class="candidates-heading">Kandidat Alternatif Terdekat:</div>
+                    <div class="candidates-heading">Bukan foto Anda? Cek alternatif terdekat:</div>
                     <div id="topCandidatesList" class="candidates-grid"></div>
                 </div>
 
@@ -151,9 +154,6 @@ $app_base_url = rtrim($base_url ?? 'https://files.yuhu.co.id', '/');
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
                         Coba Foto Ulang
                     </button>
-                    <a href="<?= htmlspecialchars($app_base_url) ?>" class="btn-scan btn-secondary">
-                        Kembali ke Portal Galeri
-                    </a>
                 </div>
             </div>
         </main>
