@@ -25,25 +25,53 @@ require_once __DIR__ . '/../lumabooth_sync.php';
 
 // 1. Validasi Parameter Client Event
 $raw_param = $_REQUEST['client'] ?? ($_REQUEST['c'] ?? '');
+if (empty($raw_param) && !empty($_SERVER['HTTP_REFERER'])) {
+    $ref_path = parse_url($_SERVER['HTTP_REFERER'], PHP_URL_PATH);
+    if (preg_match('#/client/([^/?#]+)#i', $ref_path, $m)) {
+        $raw_param = urldecode($m[1]);
+    }
+}
 $client_name = trim(str_replace(['..', '/', '\\', "\0"], '', $raw_param));
 
 if (empty($client_name)) {
     http_response_code(400);
-    echo json_encode(['success' => false, 'error' => 'Parameter event (client) harus diisi.']);
+    echo json_encode(['success' => false, 'error' => 'Parameter event (client) harus diisi. Silahkan muat ulang halaman galeri.']);
     exit;
 }
 
 // Cari folder foto event yang sesuai
 $photos_root = __DIR__ . '/photos';
 $req_clean = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $client_name));
+
+// Coba cocokkan dengan Database Portal jika folder tidak langsung ditemukan
+$db_client = null;
+try {
+    $stmt = $pdo->query("SELECT * FROM clients ORDER BY id DESC");
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $c_name = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $row['nama_client']));
+        $c_slug = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $row['slug']));
+        $c_folder = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', extractLumaboothFolderFromUrl($row['folder_foto_path'] ?? '')));
+        if ($req_clean !== '' && ($c_name === $req_clean || $c_slug === $req_clean || ($c_folder !== '' && $c_folder === $req_clean))) {
+            $db_client = $row;
+            break;
+        }
+    }
+} catch (Exception $e) {}
+
 $resolved_folder = $client_name;
 
 if (!is_dir($photos_root . '/' . $resolved_folder)) {
+    $search_candidates = [$req_clean];
+    if ($db_client) {
+        $search_candidates[] = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $db_client['nama_client']));
+        $f_hint = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', extractLumaboothFolderFromUrl($db_client['folder_foto_path'] ?? '')));
+        if ($f_hint !== '') $search_candidates[] = $f_hint;
+    }
     $dirs = @scandir($photos_root) ?: [];
     foreach ($dirs as $dir) {
         if ($dir !== '.' && $dir !== '..' && is_dir($photos_root . '/' . $dir)) {
             $dir_clean = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $dir));
-            if ($dir_clean !== '' && $dir_clean === $req_clean) {
+            if ($dir_clean !== '' && in_array($dir_clean, $search_candidates, true)) {
                 $resolved_folder = $dir;
                 break;
             }
@@ -128,17 +156,26 @@ if (!$queryImg) {
 
 // Tangani orientasi EXIF (Kamera HP sering menyertakan tag EXIF orientation)
 if (function_exists('exif_read_data')) {
-    $exif = @exif_read_data('data://image/jpeg;base64,' . base64_encode($rawImageData));
+    $exif = null;
+    if (!empty($_FILES['photo']['tmp_name']) && file_exists($_FILES['photo']['tmp_name'])) {
+        $exif = @exif_read_data($_FILES['photo']['tmp_name']);
+    }
+    if (!$exif && strlen($rawImageData) > 100) {
+        $exif = @exif_read_data('data://image/jpeg;base64,' . base64_encode(substr($rawImageData, 0, 131072)));
+    }
     if ($exif && !empty($exif['Orientation'])) {
         switch ((int)$exif['Orientation']) {
             case 3:
-                $queryImg = imagerotate($queryImg, 180, 0);
+                $rotated = imagerotate($queryImg, 180, 0);
+                if ($rotated) { imagedestroy($queryImg); $queryImg = $rotated; }
                 break;
             case 6:
-                $queryImg = imagerotate($queryImg, -90, 0);
+                $rotated = imagerotate($queryImg, -90, 0);
+                if ($rotated) { imagedestroy($queryImg); $queryImg = $rotated; }
                 break;
             case 8:
-                $queryImg = imagerotate($queryImg, 90, 0);
+                $rotated = imagerotate($queryImg, 90, 0);
+                if ($rotated) { imagedestroy($queryImg); $queryImg = $rotated; }
                 break;
         }
     }
@@ -303,7 +340,7 @@ function generateQueryVariations($img) {
         ]);
         if ($c3) $images[] = $c3;
     } else {
-        // Horizontal orientation
+        // Horizontal orientation (difoto landscape atau kertas cetakan melintang)
         $cardH = (int)($w * 2 / 3);
         if ($cardH < $h && $cardH > 40) {
             $c1 = imagecrop($img, [
@@ -313,6 +350,28 @@ function generateQueryVariations($img) {
                 'height' => $cardH
             ]);
             if ($c1) $images[] = $c1;
+        }
+
+        // Coba rotasi 90 derajat CW & CCW untuk mengantisipasi strip vertikal yang difoto horizontal
+        $rCW = imagerotate($img, -90, 0);
+        if ($rCW) {
+            $images[] = $rCW;
+            $rH = imagesy($rCW);
+            $rW = imagesx($rCW);
+            $stripW = (int)($rH / 2.9);
+            if ($stripW < $rW && $stripW > 40) {
+                $cStrip = imagecrop($rCW, [
+                    'x' => (int)(($rW - $stripW) / 2),
+                    'y' => 0,
+                    'width' => $stripW,
+                    'height' => $rH
+                ]);
+                if ($cStrip) $images[] = $cStrip;
+            }
+        }
+        $rCCW = imagerotate($img, 90, 0);
+        if ($rCCW) {
+            $images[] = $rCCW;
         }
     }
 
@@ -471,10 +530,10 @@ usort($results, function($a, $b) {
 $bestMatch = $results[0] ?? null;
 
 // Ambang Batas Fleksibel:
-// 1. High Confidence: >= 52% (Pasti Cocok)
-// 2. Medium Confidence: >= 38% (Kemungkinan Besar Cocok / Kandidat Terbaik)
-$isHighMatch = ($bestMatch && $bestMatch['score'] >= 52.0);
-$isPossibleMatch = ($bestMatch && $bestMatch['score'] >= 38.0);
+// 1. High Confidence: >= 48% (Pasti Cocok)
+// 2. Medium Confidence: >= 32% (Kemungkinan Besar Cocok / Kandidat Terbaik)
+$isHighMatch = ($bestMatch && $bestMatch['score'] >= 48.0);
+$isPossibleMatch = ($bestMatch && $bestMatch['score'] >= 32.0);
 
 echo json_encode([
     'success' => true,

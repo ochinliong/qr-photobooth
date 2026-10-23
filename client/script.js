@@ -378,32 +378,111 @@ function renderCandidatesList(containerElement, candidates, excludePath) {
     return filtered.length;
 }
 
+function getResolvedClientParam() {
+    // 1. Dari variable global yang disuntikkan PHP di index.php
+    if (typeof CURRENT_CLIENT_FOLDER !== 'undefined' && CURRENT_CLIENT_FOLDER) {
+        return CURRENT_CLIENT_FOLDER;
+    }
+    // 2. Dari URL query parameter ?client= atau ?c=
+    const urlParams = new URLSearchParams(window.location.search);
+    const fromParam = urlParams.get('client') || urlParams.get('c');
+    if (fromParam) return fromParam.trim();
+
+    // 3. Dari URL pathname (contoh: /client/Fatha_Fadhila)
+    const pathSegments = window.location.pathname.split('/').filter(Boolean);
+    const clientIdx = pathSegments.indexOf('client');
+    if (clientIdx !== -1 && pathSegments[clientIdx + 1]) {
+        return decodeURIComponent(pathSegments[clientIdx + 1].split('?')[0]);
+    }
+
+    // 4. Deteksi otomatis dari folder file pertama di gallerySessions
+    if (typeof gallerySessions !== 'undefined' && Array.isArray(gallerySessions) && gallerySessions.length > 0) {
+        const firstFile = gallerySessions[0].files && gallerySessions[0].files[0];
+        if (firstFile && firstFile.path) {
+            const m = firstFile.path.match(/photos\/([^/]+)\//);
+            if (m && m[1]) return decodeURIComponent(m[1]);
+        }
+    }
+    return '';
+}
+
+// Kompres & Normalisasi Orientasi EXIF Foto iPhone sebelum diupload ke server
+function preprocessImageForSearch(file) {
+    return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const dataUrl = e.target.result;
+            const img = new Image();
+            img.onload = function() {
+                try {
+                    // Batasi resolusi maksimal 1200px untuk pencocokan cepat & hemat kuota
+                    const maxDim = 1200;
+                    let w = img.naturalWidth || img.width;
+                    let h = img.naturalHeight || img.height;
+                    if (w > maxDim || h > maxDim) {
+                        if (w > h) {
+                            h = Math.round((h * maxDim) / w);
+                            w = maxDim;
+                        } else {
+                            w = Math.round((w * maxDim) / h);
+                            h = maxDim;
+                        }
+                    }
+                    const canvas = document.createElement('canvas');
+                    canvas.width = w;
+                    canvas.height = h;
+                    const ctx = canvas.getContext('2d');
+                    // Mobile Safari otomatis merotasi EXIF saat di-render ke canvas
+                    ctx.drawImage(img, 0, 0, w, h);
+                    canvas.toBlob((blob) => {
+                        resolve({
+                            blob: blob || file,
+                            previewUrl: dataUrl
+                        });
+                    }, 'image/jpeg', 0.85);
+                } catch (err) {
+                    resolve({ blob: file, previewUrl: dataUrl });
+                }
+            };
+            img.onerror = function() {
+                resolve({ blob: file, previewUrl: dataUrl });
+            };
+            img.src = dataUrl;
+        };
+        reader.onerror = function() {
+            resolve({ blob: file, previewUrl: '' });
+        };
+        reader.readAsDataURL(file);
+    });
+}
+
 async function handleVisualSearchFile(input) {
     if (!input.files || !input.files[0]) return;
     const file = input.files[0];
 
-    // Tampilkan pratinjau foto yang diambil tamu dan mulai animasi laser
-    const reader = new FileReader();
-    reader.onload = function(e) {
+    // Mulai tampilan loading laser
+    stepInit.style.display = 'none';
+    stepLoading.style.display = 'block';
+    stepSuccess.style.display = 'none';
+    stepFail.style.display = 'none';
+
+    try {
+        const processed = await preprocessImageForSearch(file);
         const preview = document.getElementById('visualPreviewImg');
-        if (preview) preview.src = e.target.result;
-
-        stepInit.style.display = 'none';
-        stepLoading.style.display = 'block';
-        stepSuccess.style.display = 'none';
-        stepFail.style.display = 'none';
-
+        if (preview && processed.previewUrl) {
+            preview.src = processed.previewUrl;
+        }
+        executeVisualSearch(processed.blob || file);
+    } catch (e) {
         executeVisualSearch(file);
-    };
-    reader.readAsDataURL(file);
+    }
 }
 
 async function executeVisualSearch(file) {
-    const urlParams = new URLSearchParams(window.location.search);
-    const clientParam = urlParams.get('client') || urlParams.get('c') || '';
+    const clientParam = getResolvedClientParam();
 
     const formData = new FormData();
-    formData.append('photo', file);
+    formData.append('photo', file, 'search_print.jpg');
     formData.append('client', clientParam);
 
     try {
@@ -474,7 +553,11 @@ async function executeVisualSearch(file) {
                 if (fallbackList) fallbackList.style.display = 'grid';
             } else {
                 if (failBadge) failBadge.innerText = '❌ Belum Menemukan Foto yang Cocok';
-                if (failMsg) failMsg.innerText = (data && data.message) ? data.message : 'Pastikan foto cetakan diambil tegak lurus dan pencahayaan cukup.';
+                if (failMsg) {
+                    failMsg.innerText = (data && (data.message || data.error)) 
+                        ? (data.message || data.error) 
+                        : 'Pastikan foto cetakan diambil tegak lurus dan pencahayaan cukup.';
+                }
                 if (fallbackList) {
                     fallbackList.innerHTML = '';
                     fallbackList.style.display = 'none';

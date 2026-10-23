@@ -499,6 +499,9 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
     </div>
     <?php endif; ?>
 
+    <script>
+        const CURRENT_CLIENT_FOLDER = <?php echo json_encode($resolved_folder); ?>;
+    </script>
     <script src="script.js?v=<?php echo @filemtime(__DIR__ . '/script.js') ?: '2'; ?>"></script>
     <script>
         async function downloadAllFilesZip() {
