@@ -99,6 +99,17 @@ $app_base_url = rtrim($base_url ?? 'https://files.yuhu.co.id', '/');
 
             <!-- Step 3: Hasil Berhasil Ditemukan -->
             <div id="stepSuccess" style="display:none;">
+                <div class="result-top-bar">
+                    <button type="button" onclick="resetScan()" class="btn-back-nav">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+                        <span>Pindai Lain</span>
+                    </button>
+                    <div class="auto-reset-badge" id="autoResetBadge" title="Halaman akan kembali otomatis jika tidak ada aktivitas">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                        <span>Kembali dlm <strong id="autoResetTimerNum">60</strong>s</span>
+                    </div>
+                </div>
+
                 <div class="result-header">
                     <div class="badge-success" id="matchBadgeTitle">Foto Berhasil Ditemukan</div>
                     <div class="badge-score" id="matchScoreText">Tingkat Kemiripan 95%</div>
@@ -120,10 +131,10 @@ $app_base_url = rtrim($base_url ?? 'https://files.yuhu.co.id', '/');
                 </div>
 
                 <div class="btn-group">
-                    <a id="btnDownloadCurrent" href="#" download class="btn-scan btn-primary">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                        <span id="btnDownloadText">Download Foto Ini</span>
-                    </a>
+                    <button type="button" id="btnDownloadCurrent" onclick="handleDownloadOrSaveMedia()" class="btn-scan btn-primary">
+                        <svg id="btnDownloadIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                        <span id="btnDownloadText">Simpan Foto ke Galeri</span>
+                    </button>
                 </div>
 
                 <div class="privacy-badge">

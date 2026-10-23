@@ -375,6 +375,64 @@ button, a, input, .viewfinder-box, .session-tab-btn, .candidate-card {
 }
 
 /* Step 3: Match Success Result */
+.result-top-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-light);
+}
+
+.btn-back-nav {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--border-light);
+    color: var(--text-secondary);
+    padding: 6px 12px;
+    border-radius: var(--radius-md);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-back-nav:hover, .btn-back-nav:active {
+    background: rgba(255, 255, 255, 0.12);
+    color: #ffffff;
+}
+
+.auto-reset-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: var(--text-tertiary);
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-light);
+    padding: 5px 10px;
+    border-radius: 9999px;
+    font-weight: 500;
+}
+
+.auto-reset-badge strong {
+    color: var(--accent-gold);
+    font-weight: 700;
+}
+
+.btn-scan.btn-loading {
+    opacity: 0.85;
+    pointer-events: none;
+}
+
+.btn-scan.btn-success-state {
+    background: #10b981 !important;
+    color: #ffffff !important;
+    box-shadow: 0 4px 14px rgba(16, 185, 129, 0.3) !important;
+}
+
 .result-header {
     text-align: center;
     margin-bottom: 18px;

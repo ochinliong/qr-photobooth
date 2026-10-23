@@ -496,6 +496,7 @@ function collectSessionMedia($dirPath, $baseId, $app_base_url, $folderName) {
                     elseif (strpos(strtolower($rel), 'animated/') !== false) $label = 'Animasi GIF';
 
                     $mediaList[] = [
+                        'folder' => $folderName,
                         'file' => $rel,
                         'name' => $fname,
                         'url' => $url,

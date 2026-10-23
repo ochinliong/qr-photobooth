@@ -2,9 +2,10 @@
  * ============================================================================
  * YUHU PHOTOBOOTH - GLOBAL SCAN (scan.yuhu.co.id) JAVASCRIPT ENGINE
  * ============================================================================
- * Privasi Ketat: Hanya menampilkan dan mengunduh file sesi foto milik tamu
- * yang dipindai (Foto Cetak, Video Animasi, Foto Satuan). Tidak membuka akses
- * ke seluruh galeri acara.
+ * Privasi Ketat & App-Like Native Experience:
+ * 1. Simpan Foto/Video langsung ke Galeri (iOS Action Sheet "Simpan Gambar/Video")
+ * 2. Download instan di Android tanpa reload/pindah halaman
+ * 3. Navigasi kembali manual dan auto-return setelah idle tanpa aktivitas
  * ============================================================================
  */
 
@@ -15,6 +16,12 @@ const stepFail = document.getElementById('stepFail');
 
 let currentSessionMediaList = [];
 let currentActiveMediaIndex = 0;
+
+// Deteksi perangkat iOS (iPhone / iPad)
+function isIOS() {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+           (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
 
 // ============================================================================
 // PENGUNCIAN ZOOM (APP-LIKE EXPERIENCE)
@@ -69,7 +76,60 @@ document.addEventListener('wheel', function(e) {
     }
 }, { passive: false });
 
+// ============================================================================
+// AUTO-RESET / INACTIVITY TIMER
+// ============================================================================
+let autoResetTimerInterval = null;
+const IDLE_TIMEOUT_SECONDS = 75;
+let idleSecondsLeft = IDLE_TIMEOUT_SECONDS;
+
+function startAutoResetTimer() {
+    stopAutoResetTimer();
+    idleSecondsLeft = IDLE_TIMEOUT_SECONDS;
+    updateAutoResetDisplay();
+
+    autoResetTimerInterval = setInterval(() => {
+        idleSecondsLeft--;
+        updateAutoResetDisplay();
+        if (idleSecondsLeft <= 0) {
+            stopAutoResetTimer();
+            resetScan();
+        }
+    }, 1000);
+}
+
+function stopAutoResetTimer() {
+    if (autoResetTimerInterval) {
+        clearInterval(autoResetTimerInterval);
+        autoResetTimerInterval = null;
+    }
+}
+
+function updateAutoResetDisplay() {
+    const timerNum = document.getElementById('autoResetTimerNum');
+    if (timerNum) {
+        timerNum.innerText = Math.max(0, idleSecondsLeft);
+    }
+}
+
+function refreshUserActivity() {
+    if (stepSuccess && stepSuccess.style.display !== 'none') {
+        idleSecondsLeft = IDLE_TIMEOUT_SECONDS;
+        updateAutoResetDisplay();
+    }
+}
+
+// Reset idle timer pada setiap sentuhan atau interaksi pengguna
+['touchstart', 'mousedown', 'click', 'scroll', 'keydown'].forEach(evtName => {
+    document.addEventListener(evtName, refreshUserActivity, { passive: true });
+});
+
+// ============================================================================
+// RESET SCAN
+// ============================================================================
 function resetScan() {
+    stopAutoResetTimer();
+
     if (stepInit) stepInit.style.display = 'block';
     if (stepLoading) stepLoading.style.display = 'none';
     if (stepSuccess) stepSuccess.style.display = 'none';
@@ -151,6 +211,7 @@ async function handleScanFile(input) {
     if (!input.files || !input.files[0]) return;
     const file = input.files[0];
 
+    stopAutoResetTimer();
     stepInit.style.display = 'none';
     stepLoading.style.display = 'block';
     stepSuccess.style.display = 'none';
@@ -192,10 +253,15 @@ function displayMatchedSession(matchData, badgeLabel = '') {
     }
 
     // Persiapkan daftar media sesi
+    const folderName = matchData.event_folder || '';
     if (Array.isArray(matchData.session_files) && matchData.session_files.length > 0) {
-        currentSessionMediaList = matchData.session_files;
+        currentSessionMediaList = matchData.session_files.map(m => ({
+            ...m,
+            folder: m.folder || folderName
+        }));
     } else {
         currentSessionMediaList = [{
+            folder: folderName,
             file: matchData.file,
             name: matchData.file ? matchData.file.split('/').pop() : 'foto_photobooth.jpg',
             url: matchData.photo_url,
@@ -210,7 +276,6 @@ function displayMatchedSession(matchData, badgeLabel = '') {
     if (tabsContainer) {
         tabsContainer.innerHTML = '';
         if (currentSessionMediaList.length > 1) {
-            // Hitung label duplikat
             const labelCounts = {};
             currentSessionMediaList.forEach(m => {
                 const baseLbl = m.label || 'Media';
@@ -242,18 +307,20 @@ function displayMatchedSession(matchData, badgeLabel = '') {
 
     // Tampilkan media pertama
     switchSessionMedia(0);
+
+    // Mulai timer auto-reset
+    startAutoResetTimer();
 }
 
 // Beralih antar file media dalam satu sesi (Foto / Video)
 function switchSessionMedia(index) {
     if (!currentSessionMediaList || !currentSessionMediaList[index]) return;
     currentActiveMediaIndex = index;
+    refreshUserActivity();
 
     const media = currentSessionMediaList[index];
     const resultImg = document.getElementById('matchResultImg');
     const resultVideo = document.getElementById('matchResultVideo');
-    const btnDownload = document.getElementById('btnDownloadCurrent');
-    const btnDownloadText = document.getElementById('btnDownloadText');
 
     // Update tab active classes
     const tabButtons = document.querySelectorAll('.session-tab-btn');
@@ -269,7 +336,6 @@ function switchSessionMedia(index) {
             resultVideo.src = media.url;
             resultVideo.load();
         }
-        if (btnDownloadText) btnDownloadText.innerText = 'Download Video Ini';
     } else {
         if (resultVideo) {
             resultVideo.pause();
@@ -280,15 +346,125 @@ function switchSessionMedia(index) {
             resultImg.style.display = 'block';
             resultImg.src = media.url;
         }
-        if (btnDownloadText) {
-            btnDownloadText.innerText = media.is_print ? 'Download Foto Cetak' : 'Download Foto Ini';
-        }
     }
 
-    if (btnDownload) {
-        btnDownload.href = media.url;
-        const fileName = media.name || (media.url ? media.url.split('/').pop() : 'photobooth_file');
-        btnDownload.setAttribute('download', fileName);
+    updateDownloadButtonLabel(media);
+}
+
+// Update label tombol sesuai platform (iPhone vs Android) dan tipe file
+function updateDownloadButtonLabel(media) {
+    const btnText = document.getElementById('btnDownloadText');
+    if (!btnText || !media) return;
+
+    const ios = isIOS();
+    if (media.is_video) {
+        btnText.innerText = ios ? 'Simpan Video ke Galeri' : 'Download Video';
+    } else if (media.is_print) {
+        btnText.innerText = ios ? 'Simpan Foto Cetak' : 'Download Foto Cetak';
+    } else {
+        btnText.innerText = ios ? 'Simpan Foto ke Galeri' : 'Download Foto';
+    }
+}
+
+// ============================================================================
+// DOWNLOAD & SIMPAN FOTO / VIDEO (IPHONE & ANDROID)
+// ============================================================================
+async function handleDownloadOrSaveMedia() {
+    const media = currentSessionMediaList[currentActiveMediaIndex];
+    if (!media) return;
+
+    refreshUserActivity();
+
+    const btn = document.getElementById('btnDownloadCurrent');
+    const btnText = document.getElementById('btnDownloadText');
+    const originalText = btnText ? btnText.innerText : 'Download';
+
+    if (btn) btn.classList.add('btn-loading');
+    if (btnText) btnText.innerText = 'Menyiapkan File...';
+
+    const isVid = media.is_video;
+    const ext = media.ext || (isVid ? 'mp4' : 'jpg');
+    const mime = isVid ? 'video/mp4' : (ext === 'png' ? 'image/png' : 'image/jpeg');
+    const filename = media.name || (isVid ? 'photobooth_video.mp4' : 'photobooth_photo.jpg');
+
+    // Endpoint download proxy same-origin agar bebas CORS
+    const proxyBlobUrl = `download.php?folder=${encodeURIComponent(media.folder || '')}&file=${encodeURIComponent(media.file || '')}&action=inline`;
+    const proxyDownloadUrl = `download.php?folder=${encodeURIComponent(media.folder || '')}&file=${encodeURIComponent(media.file || '')}&action=download`;
+
+    try {
+        if (isIOS()) {
+            // ================================================================
+            // JALUR IPHONE / IPAD:
+            // Gunakan Web Share API dengan File object. Ini akan memunculkan
+            // Action Sheet asli iOS dengan pilihan "Simpan Gambar" / "Simpan Video"
+            // langsung masuk ke Galeri Foto (Camera Roll) iPhone!
+            // ================================================================
+            let blob = null;
+            try {
+                const resp = await fetch(proxyBlobUrl);
+                if (resp.ok) blob = await resp.blob();
+            } catch (fetchErr) {
+                // Fallback ke direct URL jika proxy gagal
+                const respDirect = await fetch(media.url);
+                if (respDirect.ok) blob = await respDirect.blob();
+            }
+
+            if (blob) {
+                const fileObj = new File([blob], filename, { type: mime });
+                if (navigator.canShare && navigator.canShare({ files: [fileObj] })) {
+                    await navigator.share({
+                        files: [fileObj],
+                        title: isVid ? 'Video YUHU Photobooth' : 'Foto YUHU Photobooth'
+                    });
+                } else {
+                    // Fallback jika canShare false di browser pihak ketiga iOS (misal in-app browser)
+                    const blobUrl = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = blobUrl;
+                    a.download = filename;
+                    a.target = '_blank';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+                }
+            } else {
+                // Fallback direct link
+                window.open(proxyDownloadUrl, '_blank');
+            }
+        } else {
+            // ================================================================
+            // JALUR ANDROID & DESKTOP:
+            // Unduh langsung di latar belakang melalui trigger anchor invisible.
+            // Layar tetap bertahan di halaman hasil tanpa reload / jumping.
+            // ================================================================
+            const a = document.createElement('a');
+            a.href = proxyDownloadUrl;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
+        // Tampilkan indikator berhasil sejenak tanpa mengubah tampilan
+        if (btn) btn.classList.add('btn-success-state');
+        if (btnText) btnText.innerText = isIOS() ? 'Berhasil Disimpan!' : 'Berhasil Diunduh!';
+
+        setTimeout(() => {
+            if (btn) {
+                btn.classList.remove('btn-loading');
+                btn.classList.remove('btn-success-state');
+            }
+            updateDownloadButtonLabel(media);
+        }, 2200);
+
+    } catch (err) {
+        // Jika pengguna membatalkan share sheet di iPhone (AbortError), kembalikan tombol normal
+        if (btn) {
+            btn.classList.remove('btn-loading');
+            btn.classList.remove('btn-success-state');
+        }
+        updateDownloadButtonLabel(media);
     }
 }
 
@@ -311,14 +487,12 @@ function renderCandidateCards(container, candidates, excludePhotoUrl) {
             <span class="candidate-card-event">${cand.event_title}</span>
         `;
         card.addEventListener('click', () => {
-            // Tampilkan sesi foto ini langsung di layar hasil tanpa membuka galeri acara
             stepLoading.style.display = 'none';
             stepFail.style.display = 'none';
             stepSuccess.style.display = 'block';
 
             displayMatchedSession(cand, 'Foto Alternatif Terpilih');
 
-            // Scroll halus ke kartu hasil
             const cardElem = document.querySelector('.scan-card');
             if (cardElem) cardElem.scrollIntoView({ behavior: 'smooth', block: 'start' });
         });
