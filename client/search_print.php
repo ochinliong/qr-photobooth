@@ -182,123 +182,186 @@ if (function_exists('exif_read_data')) {
 }
 
 // ============================================================================
-// FUNGSI-FUNGSI SIGNATURE & MULTI-CROP ENGINE
+// FUNGSI-FUNGSI SIGNATURE & POSE-AWARE MULTI-SCALE MATCHING ENGINE
 // ============================================================================
 
-/**
- * 1. Compute 64-bit Difference Hash (dHash)
- */
-function computeDHash($srcImg) {
-    $w = imagesx($srcImg);
-    $h = imagesy($srcImg);
-    $target = imagecreatetruecolor(9, 8);
-    imagecopyresampled($target, $srcImg, 0, 0, 0, 0, 9, 8, $w, $h);
+function extractLuminanceMatrix($srcImg, $targetW, $targetH) {
+    $thumb = imagecreatetruecolor($targetW, $targetH);
+    imagecopyresampled($thumb, $srcImg, 0, 0, 0, 0, $targetW, $targetH, imagesx($srcImg), imagesy($srcImg));
 
-    $hash = '';
-    for ($y = 0; $y < 8; $y++) {
-        $prevGray = null;
-        for ($x = 0; $x < 9; $x++) {
-            $rgb = imagecolorat($target, $x, $y);
+    $lumValues = [];
+    $sum = 0;
+    for ($y = 0; $y < $targetH; $y++) {
+        for ($x = 0; $x < $targetW; $x++) {
+            $rgb = imagecolorat($thumb, $x, $y);
             $r = ($rgb >> 16) & 0xFF;
             $g = ($rgb >> 8) & 0xFF;
             $b = $rgb & 0xFF;
-            $gray = (int)(0.299 * $r + 0.587 * $g + 0.114 * $b);
-
-            if ($prevGray !== null) {
-                $hash .= ($prevGray > $gray) ? '1' : '0';
-            }
-            $prevGray = $gray;
+            $lum = (int)(($r * 299 + $g * 587 + $b * 114) / 1000);
+            $lumValues[] = $lum;
+            $sum += $lum;
         }
     }
-    imagedestroy($target);
-    return $hash;
-}
+    imagedestroy($thumb);
 
-function hammingDistance($hash1, $hash2) {
-    $dist = 0;
-    $len = min(strlen($hash1), strlen($hash2));
-    for ($i = 0; $i < $len; $i++) {
-        if ($hash1[$i] !== $hash2[$i]) $dist++;
+    $count = $targetW * $targetH;
+    $mean = ($count > 0) ? (int)($sum / $count) : 0;
+    $normalized = [];
+    for ($i = 0; $i < $count; $i++) {
+        $normalized[] = $lumValues[$i] - $mean;
     }
-    return $dist;
+    return $normalized;
 }
 
-/**
- * 2. Multi-Zone Block Color Signature (4 kolom x 8 baris = 32 blok)
- */
-function computeGridSignature($srcImg, $cols = 4, $rows = 8) {
-    $w = imagesx($srcImg);
-    $h = imagesy($srcImg);
-    
-    $sampleW = 32;
-    $sampleH = 64;
-    $sample = imagecreatetruecolor($sampleW, $sampleH);
-    imagecopyresampled($sample, $srcImg, 0, 0, 0, 0, $sampleW, $sampleH, $w, $h);
-
-    $blockW = (int)($sampleW / $cols);
-    $blockH = (int)($sampleH / $rows);
-
-    $blocks = [];
-    for ($r = 0; $r < $rows; $r++) {
-        for ($c = 0; $c < $cols; $c++) {
-            $startX = $c * $blockW;
-            $startY = $r * $blockH;
-            $sumR = 0; $sumG = 0; $sumB = 0; $pixelCount = 0;
-
-            for ($y = $startY; $y < $startY + $blockH; $y++) {
-                for ($x = $startX; $x < $startX + $blockW; $x++) {
-                    $rgb = imagecolorat($sample, $x, $y);
-                    $sumR += ($rgb >> 16) & 0xFF;
-                    $sumG += ($rgb >> 8) & 0xFF;
-                    $sumB += $rgb & 0xFF;
-                    $pixelCount++;
-                }
-            }
-            $avgR = $pixelCount > 0 ? (int)($sumR / $pixelCount) : 0;
-            $avgG = $pixelCount > 0 ? (int)($sumG / $pixelCount) : 0;
-            $avgB = $pixelCount > 0 ? (int)($sumB / $pixelCount) : 0;
-            $lum = (int)(0.299 * $avgR + 0.587 * $avgG + 0.114 * $avgB);
-
-            $blocks[] = [$avgR, $avgG, $avgB, $lum];
+function extractGradientMap($normLum, $w, $h) {
+    $gradients = [];
+    for ($y = 0; $y < $h; $y++) {
+        for ($x = 0; $x < $w; $x++) {
+            $idx = $y * $w + $x;
+            $val = $normLum[$idx];
+            $dx = ($x < $w - 1) ? abs($normLum[$idx + 1] - $val) : 0;
+            $dy = ($y < $h - 1) ? abs($normLum[$idx + $w] - $val) : 0;
+            $gradients[] = (int)($dx + $dy);
         }
     }
-    imagedestroy($sample);
-    return $blocks;
+    return $gradients;
 }
 
-/**
- * Menghitung kemiripan Grid Signature (0.0 sampai 1.0) dengan kompensasi perbedaan kecerahan
- */
-function compareGridSignatures($sig1, $sig2) {
-    if (empty($sig1) || empty($sig2) || count($sig1) !== count($sig2)) return 0;
+function extractPoseAwareSignature($img) {
+    $w = imagesx($img);
+    $h = imagesy($img);
 
-    $n = count($sig1);
-    $lumDiffSum = 0;
-    for ($i = 0; $i < $n; $i++) {
-        $lumDiffSum += ($sig1[$i][3] - $sig2[$i][3]);
+    // 1. Global context (12x16)
+    $globalLum = extractLuminanceMatrix($img, 12, 16);
+
+    // 2. Tentukan Area Foto Utama (Inner Photo Area, pisahkan dari border/footer event)
+    $innerLum = [];
+    $innerEdge = [];
+    $slot1Lum = [];
+    $slot2Lum = [];
+
+    if ($h > $w) {
+        // Strip Photobooth (Vertikal)
+        $inX = (int)($w * 0.06);
+        $inW = max(20, (int)($w * 0.88));
+        $inY = (int)($h * 0.05);
+        $inH = max(40, (int)($h * 0.74));
+
+        $cropInner = @imagecrop($img, ['x' => $inX, 'y' => $inY, 'width' => $inW, 'height' => $inH]);
+        if ($cropInner) {
+            $innerLum = extractLuminanceMatrix($cropInner, 16, 24);
+            $innerEdge = extractGradientMap($innerLum, 16, 24);
+            imagedestroy($cropInner);
+        }
+
+        // Slot 1 (Foto Atas): y = 5% s/d 42%
+        $s1Y = (int)($h * 0.05);
+        $s1H = max(20, (int)($h * 0.38));
+        $cropS1 = @imagecrop($img, ['x' => $inX, 'y' => $s1Y, 'width' => $inW, 'height' => $s1H]);
+        if ($cropS1) {
+            $slot1Lum = extractLuminanceMatrix($cropS1, 16, 16);
+            imagedestroy($cropS1);
+        }
+
+        // Slot 2 (Foto Bawah): y = 39% s/d 78%
+        $s2Y = (int)($h * 0.39);
+        $s2H = max(20, (int)($h * 0.39));
+        $cropS2 = @imagecrop($img, ['x' => $inX, 'y' => $s2Y, 'width' => $inW, 'height' => $s2H]);
+        if ($cropS2) {
+            $slot2Lum = extractLuminanceMatrix($cropS2, 16, 16);
+            imagedestroy($cropS2);
+        }
+    } else {
+        // Horizontal (Postcard / 4x6)
+        $inX = (int)($w * 0.05);
+        $inW = max(20, (int)($w * 0.90));
+        $inY = (int)($h * 0.05);
+        $inH = max(20, (int)($h * 0.90));
+
+        $cropInner = @imagecrop($img, ['x' => $inX, 'y' => $inY, 'width' => $inW, 'height' => $inH]);
+        if ($cropInner) {
+            $innerLum = extractLuminanceMatrix($cropInner, 24, 16);
+            $innerEdge = extractGradientMap($innerLum, 24, 16);
+            imagedestroy($cropInner);
+        }
+
+        // Slot 1 (Kiri)
+        $s1W = max(20, (int)($inW * 0.52));
+        $cropS1 = @imagecrop($img, ['x' => $inX, 'y' => $inY, 'width' => $s1W, 'height' => $inH]);
+        if ($cropS1) {
+            $slot1Lum = extractLuminanceMatrix($cropS1, 16, 16);
+            imagedestroy($cropS1);
+        }
+
+        // Slot 2 (Kanan)
+        $s2X = (int)($inX + $inW * 0.48);
+        $s2W = max(20, (int)($inW * 0.52));
+        $cropS2 = @imagecrop($img, ['x' => $s2X, 'y' => $inY, 'width' => $s2W, 'height' => $inH]);
+        if ($cropS2) {
+            $slot2Lum = extractLuminanceMatrix($cropS2, 16, 16);
+            imagedestroy($cropS2);
+        }
     }
-    $avgOffset = (int)($lumDiffSum / $n);
 
-    $totalDiff = 0;
-    for ($i = 0; $i < $n; $i++) {
-        $rDiff = abs($sig1[$i][0] - $sig2[$i][0] - $avgOffset);
-        $gDiff = abs($sig1[$i][1] - $sig2[$i][1] - $avgOffset);
-        $bDiff = abs($sig1[$i][2] - $sig2[$i][2] - $avgOffset);
-        $lDiff = abs($sig1[$i][3] - $sig2[$i][3] - $avgOffset);
-
-        $blockDiff = ($rDiff + $gDiff + $bDiff + $lDiff * 2) / 5;
-        $totalDiff += $blockDiff;
-    }
-
-    $avgDiff = $totalDiff / $n;
-    return max(0, min(1, 1 - ($avgDiff / 85)));
+    return [
+        'global'     => $globalLum,
+        'inner'      => $innerLum,
+        'inner_edge' => $innerEdge,
+        'slot1'      => $slot1Lum,
+        'slot2'      => $slot2Lum
+    ];
 }
 
-/**
- * Multi-Crop Generator: Menghasilkan beberapa variasi crop query image
- * (Full, Center 1:3 Strip, Center 2:3 Postcard, dan Center Inner 80%)
- * untuk membuang background meja/tangan tamu secara otomatis!
- */
+function compareVectorDist($v1, $v2) {
+    if (empty($v1) || empty($v2) || count($v1) !== count($v2)) return 999;
+    $sum = 0;
+    $n = count($v1);
+    for ($i = 0; $i < $n; $i++) {
+        $sum += abs($v1[$i] - $v2[$i]);
+    }
+    return $sum / $n;
+}
+
+function comparePoseAwareSignatures($qSig, $cSig) {
+    if (empty($qSig) || empty($cSig)) return 0;
+
+    // 1. Global context difference
+    $diffG = compareVectorDist($qSig['global'] ?? [], $cSig['global'] ?? []);
+    $scoreG = max(0, 100 - $diffG * 1.5);
+
+    // 2. Inner photo luminance (pose & people) difference
+    $diffI = compareVectorDist($qSig['inner'] ?? [], $cSig['inner'] ?? []);
+    $scoreI = max(0, 100 - $diffI * 1.6);
+
+    // 3. Inner edge/contour (hands & gestures) difference
+    $diffE = compareVectorDist($qSig['inner_edge'] ?? [], $cSig['inner_edge'] ?? []);
+    $scoreE = max(0, 100 - $diffE * 2.2);
+
+    // 4. Slot-level pose comparison (Slot 1 & Slot 2)
+    $diffS1 = compareVectorDist($qSig['slot1'] ?? [], $cSig['slot1'] ?? []);
+    $scoreS1 = max(0, 100 - $diffS1 * 1.8);
+
+    $diffS2 = compareVectorDist($qSig['slot2'] ?? [], $cSig['slot2'] ?? []);
+    $scoreS2 = max(0, 100 - $diffS2 * 1.8);
+
+    $diffCross1 = compareVectorDist($qSig['slot1'] ?? [], $cSig['slot2'] ?? []);
+    $scoreCross1 = max(0, 100 - $diffCross1 * 1.8);
+
+    $diffCross2 = compareVectorDist($qSig['slot2'] ?? [], $cSig['slot1'] ?? []);
+    $scoreCross2 = max(0, 100 - $diffCross2 * 1.8);
+
+    $directSlots = ($scoreS1 + $scoreS2) / 2;
+    $bestSlot = max($directSlots, $scoreS1, $scoreS2, $scoreCross1, $scoreCross2);
+
+    // Bobot Terkalibrasi:
+    // Global Border: 15% (hanya verifikasi tema/event)
+    // Inner People & Pose: 35% (posisi kepala, baju, tubuh)
+    // Inner Edge & Hand Gestures: 20% (kontur pose & gestur tangan)
+    // Slot Pose Detail: 30% (detail pose slot foto individu)
+    $finalScore = ($scoreG * 0.15) + ($scoreI * 0.35) + ($scoreE * 0.20) + ($bestSlot * 0.30);
+    return round($finalScore, 1);
+}
+
 function generateQueryVariations($img) {
     $w = imagesx($img);
     $h = imagesy($img);
@@ -308,7 +371,7 @@ function generateQueryVariations($img) {
         // 1. Center Crop 1:3 (Strip Photobooth)
         $stripW = (int)($h / 2.9);
         if ($stripW < $w && $stripW > 40) {
-            $c1 = imagecrop($img, [
+            $c1 = @imagecrop($img, [
                 'x' => (int)(($w - $stripW) / 2),
                 'y' => 0,
                 'width' => $stripW,
@@ -320,7 +383,7 @@ function generateQueryVariations($img) {
         // 2. Center Crop 2:3 (Postcard 4x6)
         $cardW = (int)($h * 2 / 3);
         if ($cardW < $w && $cardW > 40) {
-            $c2 = imagecrop($img, [
+            $c2 = @imagecrop($img, [
                 'x' => (int)(($w - $cardW) / 2),
                 'y' => 0,
                 'width' => $cardW,
@@ -332,18 +395,36 @@ function generateQueryVariations($img) {
         // 3. Center Inner 80% (Menghilangkan margin meja dan jari pemegang foto)
         $inW = (int)($w * 0.82);
         $inH = (int)($h * 0.82);
-        $c3 = imagecrop($img, [
+        $c3 = @imagecrop($img, [
             'x' => (int)($w * 0.09),
             'y' => (int)($h * 0.09),
             'width' => $inW,
             'height' => $inH
         ]);
         if ($c3) $images[] = $c3;
+
+        // 4. Fokus Foto Atas
+        $cTop = @imagecrop($img, [
+            'x' => 0,
+            'y' => 0,
+            'width' => $w,
+            'height' => (int)($h * 0.60)
+        ]);
+        if ($cTop) $images[] = $cTop;
+
+        // 5. Fokus Foto Bawah
+        $cBottom = @imagecrop($img, [
+            'x' => 0,
+            'y' => (int)($h * 0.40),
+            'width' => $w,
+            'height' => (int)($h * 0.60)
+        ]);
+        if ($cBottom) $images[] = $cBottom;
     } else {
-        // Horizontal orientation (difoto landscape atau kertas cetakan melintang)
+        // Horizontal orientation
         $cardH = (int)($w * 2 / 3);
         if ($cardH < $h && $cardH > 40) {
-            $c1 = imagecrop($img, [
+            $c1 = @imagecrop($img, [
                 'x' => 0,
                 'y' => (int)(($h - $cardH) / 2),
                 'width' => $w,
@@ -352,15 +433,15 @@ function generateQueryVariations($img) {
             if ($c1) $images[] = $c1;
         }
 
-        // Coba rotasi 90 derajat CW & CCW untuk mengantisipasi strip vertikal yang difoto horizontal
-        $rCW = imagerotate($img, -90, 0);
+        // Coba rotasi 90 derajat CW & CCW
+        $rCW = @imagerotate($img, -90, 0);
         if ($rCW) {
             $images[] = $rCW;
             $rH = imagesy($rCW);
             $rW = imagesx($rCW);
             $stripW = (int)($rH / 2.9);
             if ($stripW < $rW && $stripW > 40) {
-                $cStrip = imagecrop($rCW, [
+                $cStrip = @imagecrop($rCW, [
                     'x' => (int)(($rW - $stripW) / 2),
                     'y' => 0,
                     'width' => $stripW,
@@ -369,7 +450,7 @@ function generateQueryVariations($img) {
                 if ($cStrip) $images[] = $cStrip;
             }
         }
-        $rCCW = imagerotate($img, 90, 0);
+        $rCCW = @imagerotate($img, 90, 0);
         if ($rCCW) {
             $images[] = $rCCW;
         }
@@ -377,10 +458,7 @@ function generateQueryVariations($img) {
 
     $signatures = [];
     foreach ($images as $im) {
-        $signatures[] = [
-            'dhash' => computeDHash($im),
-            'grid'  => computeGridSignature($im)
-        ];
+        $signatures[] = extractPoseAwareSignature($im);
         if ($im !== $img) {
             imagedestroy($im);
         }
@@ -395,7 +473,7 @@ imagedestroy($queryImg);
 // ============================================================================
 // 5. AMBIL ATAU BANGUN CACHE SIGNATURE UNTUK MASTER PRINT EVENT
 // ============================================================================
-$cacheFile = $target_dir . '/.search_cache_v2.json';
+$cacheFile = $target_dir . '/.search_cache_v4.json';
 $candidateSignatures = [];
 $needRebuild = true;
 
@@ -435,7 +513,7 @@ usort($candidateFiles, function($a, $b) {
     return ($b['is_print'] ? 1 : 0) - ($a['is_print'] ? 1 : 0);
 });
 
-// Cek apakah cache v2 masih valid
+// Cek apakah cache v4 masih valid
 if (file_exists($cacheFile)) {
     $cacheContent = @file_get_contents($cacheFile);
     $cached = $cacheContent ? @json_decode($cacheContent, true) : null;
@@ -454,8 +532,7 @@ if ($needRebuild || empty($candidateSignatures)) {
         if ($img) {
             $candidateSignatures[] = [
                 'file' => $cand['rel_path'],
-                'dhash' => computeDHash($img),
-                'grid' => computeGridSignature($img),
+                'pose_sig' => extractPoseAwareSignature($img),
                 'is_print' => $cand['is_print']
             ];
             imagedestroy($img);
@@ -487,12 +564,7 @@ foreach ($candidateSignatures as $cand) {
 
     // Uji candidate terhadap semua variasi crop foto tamu (ambil skor tertinggi)
     foreach ($querySignatures as $qSig) {
-        $hamming = hammingDistance($qSig['dhash'], $cand['dhash']);
-        $dhashScore = max(0, (64 - $hamming) / 64);
-        $gridScore = compareGridSignatures($qSig['grid'], $cand['grid']);
-
-        // Bobot: 35% dHash + 65% Grid Color
-        $score = round(($dhashScore * 0.35 + $gridScore * 0.65) * 100, 1);
+        $score = comparePoseAwareSignatures($qSig, $cand['pose_sig']);
         if ($score > $bestScoreForCand) {
             $bestScoreForCand = $score;
         }
@@ -500,7 +572,7 @@ foreach ($candidateSignatures as $cand) {
 
     // Sedikit bonus jika memang file dari folder Prints resmi
     if (!empty($cand['is_print'])) {
-        $bestScoreForCand = min(100, $bestScoreForCand + 3);
+        $bestScoreForCand = min(100, $bestScoreForCand + 2);
     }
 
     $encodedClient = rawurlencode($resolved_folder);
@@ -529,11 +601,11 @@ usort($results, function($a, $b) {
 
 $bestMatch = $results[0] ?? null;
 
-// Ambang Batas Fleksibel:
-// 1. High Confidence: >= 48% (Pasti Cocok)
-// 2. Medium Confidence: >= 32% (Kemungkinan Besar Cocok / Kandidat Terbaik)
-$isHighMatch = ($bestMatch && $bestMatch['score'] >= 48.0);
-$isPossibleMatch = ($bestMatch && $bestMatch['score'] >= 32.0);
+// Ambang Batas Akurat Berbasis Pose & Kontur Detail:
+// 1. High Confidence: >= 58% (Pasti Cocok)
+// 2. Medium Confidence: >= 45% (Kandidat Terbaik)
+$isHighMatch = ($bestMatch && $bestMatch['score'] >= 58.0);
+$isPossibleMatch = ($bestMatch && $bestMatch['score'] >= 45.0);
 
 echo json_encode([
     'success' => true,
