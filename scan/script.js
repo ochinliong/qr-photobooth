@@ -16,6 +16,59 @@ const stepFail = document.getElementById('stepFail');
 let currentSessionMediaList = [];
 let currentActiveMediaIndex = 0;
 
+// ============================================================================
+// PENGUNCIAN ZOOM (APP-LIKE EXPERIENCE)
+// Mencegah zoom / gesture multi-touch / double-tap zoom di iOS & Android
+// ============================================================================
+// Mencegah gesture zoom di iOS Safari
+document.addEventListener('gesturestart', function(e) {
+    e.preventDefault();
+}, { passive: false });
+
+document.addEventListener('gesturechange', function(e) {
+    e.preventDefault();
+}, { passive: false });
+
+document.addEventListener('gestureend', function(e) {
+    e.preventDefault();
+}, { passive: false });
+
+// Mencegah pinch zoom 2 jari
+document.addEventListener('touchstart', function(e) {
+    if (e.touches && e.touches.length > 1) {
+        e.preventDefault();
+    }
+}, { passive: false });
+
+document.addEventListener('touchmove', function(e) {
+    if (e.touches && e.touches.length > 1) {
+        e.preventDefault();
+    }
+}, { passive: false });
+
+// Mencegah zoom akibat double-tap cepat di iOS Safari
+let lastTouchEndTime = 0;
+document.addEventListener('touchend', function(e) {
+    const now = Date.now();
+    if (now - lastTouchEndTime <= 300) {
+        e.preventDefault();
+        if (e.target) {
+            const clickable = e.target.closest('button, a, .viewfinder-box, .session-tab-btn, .candidate-card, .tip-item');
+            if (clickable) {
+                clickable.click();
+            }
+        }
+    }
+    lastTouchEndTime = now;
+}, false);
+
+// Mencegah Ctrl + MouseWheel zoom di PC / trackpad
+document.addEventListener('wheel', function(e) {
+    if (e.ctrlKey) {
+        e.preventDefault();
+    }
+}, { passive: false });
+
 function resetScan() {
     if (stepInit) stepInit.style.display = 'block';
     if (stepLoading) stepLoading.style.display = 'none';

@@ -6,7 +6,11 @@ $app_base_url = rtrim($base_url ?? 'https://files.yuhu.co.id', '/');
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="format-detection" content="telephone=no">
     <title>YUHU Photobooth - Pencarian Foto Cetakan</title>
     <meta name="description" content="Pindai foto cetakan fisik photobooth Anda untuk menemukan softfile dan video aslinya secara otomatis di seluruh galeri YUHU Photobooth.">
     <link rel="stylesheet" href="style.css?v=<?php echo @filemtime(__DIR__ . '/style.css') ?: '2'; ?>">

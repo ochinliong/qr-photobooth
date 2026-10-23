@@ -304,7 +304,11 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="format-detection" content="telephone=no">
     <title><?php echo htmlspecialchars($display_tab_title); ?></title>
     <link rel="icon" href="https://qr.yuhu.co.id/2025/icon.png" type="image/png">
     <link rel="apple-touch-icon" href="https://qr.yuhu.co.id/2025/icon.png">
