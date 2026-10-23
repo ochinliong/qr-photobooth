@@ -227,9 +227,104 @@ function extractGradientMap($normLum, $w, $h) {
     return $gradients;
 }
 
+function extractSlotFeatures($slotImg) {
+    $w = 48;
+    $h = 36;
+    $thumb = imagecreatetruecolor($w, $h);
+    imagecopyresampled($thumb, $slotImg, 0, 0, 0, 0, $w, $h, imagesx($slotImg), imagesy($slotImg));
+
+    $skinGrid = array_fill(0, $h, array_fill(0, $w, false));
+    $faceGrid = array_fill(0, $h, array_fill(0, $w, false));
+    $totalSkin = 0;
+    $colCounts = array_fill(0, 16, 0);
+
+    $faceMaxY = (int)($h * 0.75);
+
+    for ($y = 0; $y < $h; $y++) {
+        for ($x = 0; $x < $w; $x++) {
+            $rgb = imagecolorat($thumb, $x, $y);
+            $r = ($rgb >> 16) & 0xFF;
+            $g = ($rgb >> 8) & 0xFF;
+            $b = $rgb & 0xFF;
+
+            $cb = (int)(128 - 0.168736 * $r - 0.331264 * $g + 0.5 * $b);
+            $cr = (int)(128 + 0.5 * $r - 0.418688 * $g - 0.081312 * $b);
+
+            $isSkin = ($cb >= 77 && $cb <= 127 && $cr >= 133 && $cr <= 173 && $r > $g && $g > $b && ($r - $g >= 8));
+            if ($isSkin) {
+                $skinGrid[$y][$x] = true;
+                $totalSkin++;
+                $colIdx = min(15, (int)($x / 3)); // 48 / 16 = 3 px per bin
+                $colCounts[$colIdx]++;
+                if ($y < $faceMaxY) {
+                    $faceGrid[$y][$x] = true;
+                }
+            }
+        }
+    }
+    imagedestroy($thumb);
+
+    // BFS Connected Components untuk deteksi & hitung wajah orang
+    $visited = array_fill(0, $h, array_fill(0, $w, false));
+    $faceCount = 0;
+    $directions = [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, 1], [-1, 1], [1, -1]];
+
+    for ($y = 0; $y < $h; $y++) {
+        for ($x = 0; $x < $w; $x++) {
+            if ($faceGrid[$y][$x] && !$visited[$y][$x]) {
+                $blobSize = 0;
+                $queue = [[$x, $y]];
+                $visited[$y][$x] = true;
+                $qIdx = 0;
+
+                while ($qIdx < count($queue)) {
+                    $curr = $queue[$qIdx++];
+                    $cx = $curr[0];
+                    $cy = $curr[1];
+                    $blobSize++;
+
+                    foreach ($directions as $dir) {
+                        $nx = $cx + $dir[0];
+                        $ny = $cy + $dir[1];
+                        if ($nx >= 0 && $nx < $w && $ny >= 0 && $ny < $h) {
+                            if ($faceGrid[$ny][$nx] && !$visited[$ny][$nx]) {
+                                $visited[$ny][$nx] = true;
+                                $queue[] = [$nx, $ny];
+                            }
+                        }
+                    }
+                }
+                if ($blobSize >= 3) {
+                    $faceCount++;
+                }
+            }
+        }
+    }
+
+    $maxCol = max(1, max($colCounts));
+    $normProfile = [];
+    foreach ($colCounts as $c) {
+        $normProfile[] = round($c / $maxCol, 2);
+    }
+    $skinRatio = round($totalSkin / ($w * $h), 3);
+
+    // Detail Pose: 16x16 Luminance Matrix & Edge Contour
+    $lum16 = extractLuminanceMatrix($slotImg, 16, 16);
+    $edge16 = extractGradientMap($lum16, 16, 16);
+
+    return [
+        'face_count' => $faceCount,
+        'skin_ratio' => $skinRatio,
+        'profile'    => $normProfile,
+        'lum'        => $lum16,
+        'edge'       => $edge16
+    ];
+}
+
 function extractPoseAwareSignature($img) {
     $w = imagesx($img);
     $h = imagesy($img);
+    $isStrip = ($h / $w >= 1.8);
 
     // 1. Global context (12x16)
     $globalLum = extractLuminanceMatrix($img, 12, 16);
@@ -237,8 +332,8 @@ function extractPoseAwareSignature($img) {
     // 2. Tentukan Area Foto Utama (Inner Photo Area, pisahkan dari border/footer event)
     $innerLum = [];
     $innerEdge = [];
-    $slot1Lum = [];
-    $slot2Lum = [];
+    $slot1Feat = [];
+    $slot2Feat = [];
 
     if ($h > $w) {
         // Strip Photobooth (Vertikal)
@@ -259,7 +354,7 @@ function extractPoseAwareSignature($img) {
         $s1H = max(20, (int)($h * 0.38));
         $cropS1 = @imagecrop($img, ['x' => $inX, 'y' => $s1Y, 'width' => $inW, 'height' => $s1H]);
         if ($cropS1) {
-            $slot1Lum = extractLuminanceMatrix($cropS1, 16, 16);
+            $slot1Feat = extractSlotFeatures($cropS1);
             imagedestroy($cropS1);
         }
 
@@ -268,7 +363,7 @@ function extractPoseAwareSignature($img) {
         $s2H = max(20, (int)($h * 0.39));
         $cropS2 = @imagecrop($img, ['x' => $inX, 'y' => $s2Y, 'width' => $inW, 'height' => $s2H]);
         if ($cropS2) {
-            $slot2Lum = extractLuminanceMatrix($cropS2, 16, 16);
+            $slot2Feat = extractSlotFeatures($cropS2);
             imagedestroy($cropS2);
         }
     } else {
@@ -289,7 +384,7 @@ function extractPoseAwareSignature($img) {
         $s1W = max(20, (int)($inW * 0.52));
         $cropS1 = @imagecrop($img, ['x' => $inX, 'y' => $inY, 'width' => $s1W, 'height' => $inH]);
         if ($cropS1) {
-            $slot1Lum = extractLuminanceMatrix($cropS1, 16, 16);
+            $slot1Feat = extractSlotFeatures($cropS1);
             imagedestroy($cropS1);
         }
 
@@ -298,17 +393,18 @@ function extractPoseAwareSignature($img) {
         $s2W = max(20, (int)($inW * 0.52));
         $cropS2 = @imagecrop($img, ['x' => $s2X, 'y' => $inY, 'width' => $s2W, 'height' => $inH]);
         if ($cropS2) {
-            $slot2Lum = extractLuminanceMatrix($cropS2, 16, 16);
+            $slot2Feat = extractSlotFeatures($cropS2);
             imagedestroy($cropS2);
         }
     }
 
     return [
+        'is_strip'   => $isStrip,
         'global'     => $globalLum,
         'inner'      => $innerLum,
         'inner_edge' => $innerEdge,
-        'slot1'      => $slot1Lum,
-        'slot2'      => $slot2Lum
+        'slot1'      => $slot1Feat,
+        'slot2'      => $slot2Feat
     ];
 }
 
@@ -322,43 +418,87 @@ function compareVectorDist($v1, $v2) {
     return $sum / $n;
 }
 
+function compareSlotFeatures($s1, $s2) {
+    if (empty($s1) || empty($s2)) return [0, 0];
+
+    // 1. Crowd / Face Count Compatibility
+    $qFaces = $s1['face_count'] ?? 0;
+    $cFaces = $s2['face_count'] ?? 0;
+    $maxFaces = max(1, max($qFaces, $cFaces));
+    $faceDiff = abs($qFaces - $cFaces);
+    $faceCompat = max(0.0, 1.0 - ($faceDiff / $maxFaces));
+
+    // Horizontal silhouette distribution difference
+    $profDiff = compareVectorDist($s1['profile'] ?? [], $s2['profile'] ?? []);
+    $profCompat = max(0.0, 1.0 - $profDiff);
+
+    // Total skin mass difference
+    $skinDiff = abs(($s1['skin_ratio'] ?? 0) - ($s2['skin_ratio'] ?? 0));
+    $skinCompat = max(0.0, 1.0 - ($skinDiff * 4.0));
+
+    $crowdCompat = ($faceCompat * 0.45) + ($profCompat * 0.35) + ($skinCompat * 0.20);
+
+    // 2. Detailed Pose (Luminance & Edge Map)
+    $diffLum = compareVectorDist($s1['lum'] ?? [], $s2['lum'] ?? []);
+    $scoreLum = max(0.0, 100.0 - $diffLum * 2.0);
+
+    $diffEdge = compareVectorDist($s1['edge'] ?? [], $s2['edge'] ?? []);
+    $scoreEdge = max(0.0, 100.0 - $diffEdge * 2.5);
+
+    $basePoseScore = ($scoreLum * 0.55) + ($scoreEdge * 0.45);
+
+    // Penalti jika struktur kerumunan / jumlah orang berbeda
+    if ($crowdCompat < 0.60) {
+        $basePoseScore *= ($crowdCompat / 0.60);
+    }
+
+    $finalSlotScore = ($basePoseScore * 0.70) + (($crowdCompat * 100.0) * 0.30);
+    return [$finalSlotScore, $crowdCompat];
+}
+
 function comparePoseAwareSignatures($qSig, $cSig) {
     if (empty($qSig) || empty($cSig)) return 0;
 
-    // 1. Global context difference
+    // 1. Global context difference (tema/border)
     $diffG = compareVectorDist($qSig['global'] ?? [], $cSig['global'] ?? []);
-    $scoreG = max(0, 100 - $diffG * 1.5);
+    $scoreG = max(0.0, 100.0 - $diffG * 1.5);
 
-    // 2. Inner photo luminance (pose & people) difference
+    // 2. Inner photo luminance (keseluruhan pose & orang)
     $diffI = compareVectorDist($qSig['inner'] ?? [], $cSig['inner'] ?? []);
-    $scoreI = max(0, 100 - $diffI * 1.6);
+    $scoreI = max(0.0, 100.0 - $diffI * 1.8);
 
-    // 3. Inner edge/contour (hands & gestures) difference
+    // 3. Inner edge/contour (kontur gestur, tangan, badan)
     $diffE = compareVectorDist($qSig['inner_edge'] ?? [], $cSig['inner_edge'] ?? []);
-    $scoreE = max(0, 100 - $diffE * 2.2);
+    $scoreE = max(0.0, 100.0 - $diffE * 2.2);
 
-    // 4. Slot-level pose comparison (Slot 1 & Slot 2)
-    $diffS1 = compareVectorDist($qSig['slot1'] ?? [], $cSig['slot1'] ?? []);
-    $scoreS1 = max(0, 100 - $diffS1 * 1.8);
+    // 4. Perbandingan Slot Individu (Deteksi Muka, Kerumunan & Pose Slot)
+    list($s1Score, $c1Compat) = compareSlotFeatures($qSig['slot1'] ?? [], $cSig['slot1'] ?? []);
+    list($s2Score, $c2Compat) = compareSlotFeatures($qSig['slot2'] ?? [], $cSig['slot2'] ?? []);
 
-    $diffS2 = compareVectorDist($qSig['slot2'] ?? [], $cSig['slot2'] ?? []);
-    $scoreS2 = max(0, 100 - $diffS2 * 1.8);
+    $avgSlots = ($s1Score + $s2Score) / 2.0;
+    $avgCompat = ($c1Compat + $c2Compat) / 2.0;
 
-    $diffCross1 = compareVectorDist($qSig['slot1'] ?? [], $cSig['slot2'] ?? []);
-    $scoreCross1 = max(0, 100 - $diffCross1 * 1.8);
-
-    $diffCross2 = compareVectorDist($qSig['slot2'] ?? [], $cSig['slot1'] ?? []);
-    $scoreCross2 = max(0, 100 - $diffCross2 * 1.8);
-
-    $directSlots = ($scoreS1 + $scoreS2) / 2;
-    $bestSlot = max($directSlots, $scoreS1, $scoreS2, $scoreCross1, $scoreCross2);
+    $isStrip = !empty($qSig['is_strip']);
+    if ($isStrip) {
+        // Jika strip penuh, kedua pose di Slot 1 & Slot 2 WAJIB cocok
+        $slotScore = $avgSlots;
+    } else {
+        // Jika query adalah foto satuan / potongan slot, cocokkan ke slot terbaik
+        $slotScore = max($s1Score, $s2Score);
+    }
 
     // Bobot Terkalibrasi:
-    // Global Border: 15% (hanya verifikasi tema/event)
-    // Inner People & Pose: 35% (posisi kepala, baju, tubuh)
-    // Inner Edge & Hand Gestures: 20% (kontur pose & gestur tangan)
-    // Slot Pose Detail: 30% (detail pose slot foto individu)
-    $finalScore = ($scoreG * 0.15) + ($scoreI * 0.35) + ($scoreE * 0.20) + ($bestSlot * 0.30);
+    // Global Border: 10%
+    // Inner People & Pose: 30%
+    // Inner Edge & Hand Gestures: 20%
+    // Slot Pose & Face Details: 40%
+    $finalScore = ($scoreG * 0.10) + ($scoreI * 0.30) + ($scoreE * 0.20) + ($slotScore * 0.40);
+
+    // Penalti ketat jika komposisi jumlah orang / wajah berbeda jauh
+    if ($avgCompat < 0.50) {
+        $finalScore *= ($avgCompat / 0.50);
+    }
+
     return round($finalScore, 1);
 }
 
@@ -473,7 +613,7 @@ imagedestroy($queryImg);
 // ============================================================================
 // 5. AMBIL ATAU BANGUN CACHE SIGNATURE UNTUK MASTER PRINT EVENT
 // ============================================================================
-$cacheFile = $target_dir . '/.search_cache_v4.json';
+$cacheFile = $target_dir . '/.search_cache_v5.json';
 $candidateSignatures = [];
 $needRebuild = true;
 
@@ -601,11 +741,11 @@ usort($results, function($a, $b) {
 
 $bestMatch = $results[0] ?? null;
 
-// Ambang Batas Akurat Berbasis Pose & Kontur Detail:
-// 1. High Confidence: >= 58% (Pasti Cocok)
-// 2. Medium Confidence: >= 45% (Kandidat Terbaik)
-$isHighMatch = ($bestMatch && $bestMatch['score'] >= 58.0);
-$isPossibleMatch = ($bestMatch && $bestMatch['score'] >= 45.0);
+// Ambang Batas Akurat Berbasis Deteksi Wajah, Jumlah Orang, & Pose Detail:
+// 1. High Confidence: >= 60% (Pasti Cocok)
+// 2. Medium Confidence: >= 48% (Kandidat Terpilih)
+$isHighMatch = ($bestMatch && $bestMatch['score'] >= 60.0);
+$isPossibleMatch = ($bestMatch && $bestMatch['score'] >= 48.0);
 
 echo json_encode([
     'success' => true,
