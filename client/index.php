@@ -60,6 +60,73 @@ if (!is_dir($photos_root . '/' . $resolved_folder)) {
 
 $target_dir = $photos_root . '/' . $resolved_folder;
 
+// Verifikasi apakah event terdaftar (ada di database clients ATAU memiliki folder foto di photos/)
+$event_exists = ($db_client !== null) || is_dir($target_dir);
+
+if (!$event_exists) {
+    if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
+        http_response_code(404);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode([
+            'session_count' => 0,
+            'total_files' => 0,
+            'zip_total_files' => 0,
+            'zip_total_mb' => 0,
+            'sessions' => [],
+            'error' => 'event_not_found',
+            'message' => 'Tautan acara tidak terdaftar atau link salah.'
+        ]);
+        exit;
+    }
+
+    http_response_code(404);
+    $app_base_url = rtrim($base_url ?? 'https://files.yuhu.co.id', '/');
+
+    // Cari saran nama acara serupa jika ada kemungkinan salah ketik / typo
+    $similar_events = [];
+    try {
+        $stmt_all = $pdo->query("SELECT nama_client, slug, tanggal_event FROM clients ORDER BY id DESC LIMIT 60");
+        foreach ($stmt_all->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $c_clean = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $row['nama_client']));
+            if ($c_clean === '') continue;
+
+            $sim = 0;
+            similar_text($req_clean, $c_clean, $sim);
+            $lev = (strlen($req_clean) <= 255 && strlen($c_clean) <= 255) ? levenshtein($req_clean, $c_clean) : 99;
+
+            if ($sim >= 55 || $lev <= 3 || (strlen($req_clean) >= 4 && (strpos($c_clean, $req_clean) !== false || strpos($req_clean, $c_clean) !== false))) {
+                $year = (!empty($row['tanggal_event']) && $row['tanggal_event'] !== '0000-00-00') ? date('Y', strtotime($row['tanggal_event'])) : '';
+                $clean_name = preg_replace('/\s+/', '', $row['nama_client']);
+                $url = $year ? ($app_base_url . '/' . $year . '/' . $clean_name) : ($app_base_url . '/client/' . rawurlencode($row['nama_client']));
+                $similar_events[$row['nama_client']] = $url;
+            }
+        }
+    } catch (Exception $e) {}
+
+    if (is_dir($photos_root)) {
+        foreach (@scandir($photos_root) ?: [] as $d) {
+            if ($d !== '.' && $d !== '..' && is_dir($photos_root . '/' . $d)) {
+                $d_clean = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $d));
+                if ($d_clean === '') continue;
+                $sim = 0;
+                similar_text($req_clean, $d_clean, $sim);
+                $lev = (strlen($req_clean) <= 255 && strlen($d_clean) <= 255) ? levenshtein($req_clean, $d_clean) : 99;
+                if ($sim >= 55 || $lev <= 3 || (strlen($req_clean) >= 4 && (strpos($d_clean, $req_clean) !== false || strpos($req_clean, $d_clean) !== false))) {
+                    $d_title = str_replace('_', ' ', $d);
+                    if (!isset($similar_events[$d_title])) {
+                        $similar_events[$d_title] = $app_base_url . '/client/' . rawurlencode($d);
+                    }
+                }
+            }
+        }
+    }
+
+    $similar_events = array_slice($similar_events, 0, 3, true);
+
+    include __DIR__ . '/not_found_view.php';
+    exit;
+}
+
 // Membaca Judul Custom & Pengaturan Visibility (Jika ada di config.json atau Database)
 $display_title = $db_client ? $db_client['nama_client'] : str_replace('_', ' ', $resolved_folder);
 $display_subtitle = "Terima kasih telah merayakan bersama kami!";

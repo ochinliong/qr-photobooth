@@ -125,7 +125,15 @@ if (!empty($year) && !empty($search_slug)) {
     }
 }
 
-// Jika tidak ditemukan, arahkan kembali ke halaman utama
+// Jika tidak ditemukan di database maupun folder, arahkan ke /client/{custom_slug}
+// agar tamu mendapatkan halaman informasi resmi "Tautan Acara Tidak Terdaftar"
+if (!empty($custom_slug)) {
+    $vip_suffix = $is_vip_mode ? '?vip=1' : '';
+    header("Location: " . rtrim($base_url, '/') . '/client/' . rawurlencode($custom_slug) . $vip_suffix, true, 302);
+    exit;
+}
+
+// Fallback jika memang tidak ada slug sama sekali
 header("Location: " . $base_url);
 exit;
 ?>
