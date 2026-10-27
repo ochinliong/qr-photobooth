@@ -293,8 +293,8 @@ body {
 }
 
 .modal-slide video {
-    max-width: min(88vw, 460px);
-    max-height: 68vh;
+    max-width: min(92vw, 640px);
+    max-height: 72vh;
     width: auto;
     height: auto;
     object-fit: contain;

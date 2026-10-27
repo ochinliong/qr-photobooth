@@ -335,13 +335,30 @@ usort($sessions_map, function($a, $b) {
     return $b['time'] - $a['time'];
 });
 
-// Urutkan isi file dalam tiap sesi: 1. Prints (Cover Utama), 2. Animated/Video, 3. Singles
+// Urutkan isi file dalam tiap sesi: 1. Prints (Cover Utama), 2. Video Animated (MP4 Asli), 3. Animasi GIF, 4. Singles
 foreach ($sessions_map as &$session) {
+    // Jika sesi memiliki video MP4/MOV/WebM asli, singkirkan file GIF resolusi rendah agar kualitas tidak pecah
+    $has_hd_video = false;
+    foreach ($session['files'] as $f) {
+        $f_ext = strtolower($f['ext'] ?? '');
+        if (in_array($f_ext, ['mp4', 'mov', 'webm'])) {
+            $has_hd_video = true;
+            break;
+        }
+    }
+    if ($has_hd_video) {
+        $session['files'] = array_values(array_filter($session['files'], function($f) {
+            return strtolower($f['ext'] ?? '') !== 'gif';
+        }));
+    }
+
     usort($session['files'], function($a, $b) {
         $getPriority = function($f) {
             $path_lower = strtolower($f['file']);
-            if (strpos($path_lower, 'prints/') !== false) return 3;
-            if (strpos($path_lower, 'animated/') !== false || strpos($path_lower, 'videos/') !== false || in_array($f['ext'], ['mp4', 'gif', 'mov', 'webm'])) return 2;
+            $ext = strtolower($f['ext'] ?? '');
+            if (strpos($path_lower, 'prints/') !== false) return 4;
+            if (in_array($ext, ['mp4', 'mov', 'webm'])) return 3; // Video MP4/MOV kualitas asli selalu diutamakan!
+            if ($ext === 'gif' || strpos($path_lower, 'animated/') !== false || strpos($path_lower, 'videos/') !== false) return 2;
             return 1;
         };
         $pA = $getPriority($a);

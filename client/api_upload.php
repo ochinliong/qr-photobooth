@@ -1,7 +1,7 @@
 <?php
 header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json; charset=UTF-8");
-@set_time_limit(300);
+@set_time_limit(600);
 
 require_once '../config.php';
 // Lepaskan pengunci sesi PHP seketika agar 4+ komputer yang upload bersamaan tidak saling antre!

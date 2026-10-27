@@ -517,15 +517,28 @@ IF NOT EXIST "%STAGE_DIR%" MKDIR "%STAGE_DIR%" >nul 2>&1
 SET "STAGE_FILE=%STAGE_DIR%\!FNAME_ONLY!"
 DEL /F /Q "!STAGE_FILE!" >nul 2>&1
 
-:: Cek apakah ukuran file >= 1.9 MB (1.900.000 bytes)
-:: Jika >= 1.9 MB, otomatis kompres di STAGE_FILE agar lolos batas 2 MB PHP server!
-IF !FILE_SIZE! GEQ 1900000 (
+:: Deteksi apakah file adalah Video / Animasi (.mp4 / .mov / .webm)
+SET "IS_VIDEO=0"
+IF /I "!FILE_EXT!"==".mp4"  SET "IS_VIDEO=1"
+IF /I "!FILE_EXT!"==".mov"  SET "IS_VIDEO=1"
+IF /I "!FILE_EXT!"==".webm" SET "IS_VIDEO=1"
+
+:: UNTUK VIDEO ANIMATED: 100% KUALITAS ASLI (TIDAK BOLEH DIKOMPRES SAMA SEKALI!)
+IF "!IS_VIDEO!"=="1" (
+    COPY /Y "!CURRENT_FILE!" "!STAGE_FILE!" >nul 2>&1
+    GOTO :ready_to_upload
+)
+
+:: Hanya untuk Foto Cetak (Prints) yang > 2MB yang dioptimalkan jika diperlukan
+IF !FILE_SIZE! GEQ 2000000 (
     CALL :compress_to_stage "!CURRENT_FILE!" "!STAGE_FILE!" "!FILE_EXT!"
 )
 
 IF NOT EXIST "!STAGE_FILE!" (
     COPY /Y "!CURRENT_FILE!" "!STAGE_FILE!" >nul 2>&1
 )
+
+:ready_to_upload
 IF NOT EXIST "!STAGE_FILE!" EXIT /B 0
 
 SET "RETRY_COUNT=0"
@@ -536,7 +549,7 @@ IF NOT EXIST "!CURRENT_FILE!" (
 )
 
 :: 1. Kirim ke Server Utama (files.yuhu.co.id)
-"%CURL%" -4 --ssl-no-revoke --http1.1 -H "Expect:" --fail --max-time 90 --connect-timeout 15 -s -k -X POST "!API_URL_PRIMARY!" -F "token=!API_TOKEN!" -F "client_event=!EVENT_NAME!" -F "folder_target=!FOLDER_TARGET!" -F "file=@!STAGE_FILE!" >nul 2>&1
+"%CURL%" -4 --ssl-no-revoke --http1.1 -H "Expect:" --fail --max-time 300 --connect-timeout 20 -s -k -X POST "!API_URL_PRIMARY!" -F "token=!API_TOKEN!" -F "client_event=!EVENT_NAME!" -F "folder_target=!FOLDER_TARGET!" -F "file=@!STAGE_FILE!" >nul 2>&1
 SET "CURL_ERR=!ERRORLEVEL!"
 
 IF "!CURL_ERR!"=="0" (
@@ -546,20 +559,31 @@ IF "!CURL_ERR!"=="0" (
     EXIT /B 0
 )
 
-:: Jika CURL_ERR == 22 (HTTP 400 / 413 karena ukuran file masih > 2MB), paksa kompres lebih kecil!
+:: Jika CURL_ERR == 22 (HTTP 400 / 413 karena ukuran file besar)
 IF "!CURL_ERR!"=="22" (
-    CALL :force_recompress "!CURRENT_FILE!" "!STAGE_FILE!" "!FILE_EXT!"
-    "%CURL%" -4 --ssl-no-revoke --http1.1 -H "Expect:" --fail --max-time 90 --connect-timeout 15 -s -k -X POST "!API_URL_PRIMARY!" -F "token=!API_TOKEN!" -F "client_event=!EVENT_NAME!" -F "folder_target=!FOLDER_TARGET!" -F "file=@!STAGE_FILE!" >nul 2>&1
-    IF !ERRORLEVEL! EQU 0 (
-        DEL /F /Q "!STAGE_FILE!" >nul 2>&1
-        >> "%SENT_LOG%" ECHO !CURRENT_FILE!
-        > "%LOG_FILE%" ECHO [%DATE% %TIME%] SUKSES UPLOAD [OPTIMIZED] KE FILES.YUHU.CO.ID: !EVENT_NAME!/!FOLDER_TARGET! - !FNAME_ONLY!
-        EXIT /B 0
+    IF "!IS_VIDEO!"=="1" (
+        :: Untuk video: Kirim via Raw Binary Stream agar lolos 100% tanpa kompresi sedikitpun!
+        "%CURL%" -4 --ssl-no-revoke --http1.1 -H "Expect:" --fail --max-time 300 --connect-timeout 20 -s -k -X POST "!API_URL_PRIMARY!?token=!API_TOKEN!" -H "X-Client-Event: !EVENT_NAME!" -H "X-Folder-Target: !FOLDER_TARGET!" -H "X-File-Name: !FNAME_ONLY!" -H "X-File-Size: !FILE_SIZE!" --data-binary "@!STAGE_FILE!" >nul 2>&1
+        IF !ERRORLEVEL! EQU 0 (
+            DEL /F /Q "!STAGE_FILE!" >nul 2>&1
+            >> "%SENT_LOG%" ECHO !CURRENT_FILE!
+            > "%LOG_FILE%" ECHO [%DATE% %TIME%] SUKSES UPLOAD VIDEO ASLI (RAW STREAM) KE FILES.YUHU.CO.ID: !EVENT_NAME!/!FOLDER_TARGET! - !FNAME_ONLY!
+            EXIT /B 0
+        )
+    ) ELSE (
+        CALL :force_recompress "!CURRENT_FILE!" "!STAGE_FILE!" "!FILE_EXT!"
+        "%CURL%" -4 --ssl-no-revoke --http1.1 -H "Expect:" --fail --max-time 120 --connect-timeout 15 -s -k -X POST "!API_URL_PRIMARY!" -F "token=!API_TOKEN!" -F "client_event=!EVENT_NAME!" -F "folder_target=!FOLDER_TARGET!" -F "file=@!STAGE_FILE!" >nul 2>&1
+        IF !ERRORLEVEL! EQU 0 (
+            DEL /F /Q "!STAGE_FILE!" >nul 2>&1
+            >> "%SENT_LOG%" ECHO !CURRENT_FILE!
+            > "%LOG_FILE%" ECHO [%DATE% %TIME%] SUKSES UPLOAD [OPTIMIZED] KE FILES.YUHU.CO.ID: !EVENT_NAME!/!FOLDER_TARGET! - !FNAME_ONLY!
+            EXIT /B 0
+        )
     )
 )
 
 :: 2. Kirim ke Server Cadangan (qr.yuhu.co.id)
-"%CURL%" -4 --ssl-no-revoke --http1.1 -H "Expect:" --fail --max-time 90 --connect-timeout 15 -s -k -X POST "!API_URL_FALLBACK!" -F "token=!API_TOKEN!" -F "client_event=!EVENT_NAME!" -F "folder_target=!FOLDER_TARGET!" -F "file=@!STAGE_FILE!" >nul 2>&1
+"%CURL%" -4 --ssl-no-revoke --http1.1 -H "Expect:" --fail --max-time 300 --connect-timeout 20 -s -k -X POST "!API_URL_FALLBACK!" -F "token=!API_TOKEN!" -F "client_event=!EVENT_NAME!" -F "folder_target=!FOLDER_TARGET!" -F "file=@!STAGE_FILE!" >nul 2>&1
 SET "CURL_ERR_FB=!ERRORLEVEL!"
 
 IF "!CURL_ERR_FB!"=="0" (
@@ -619,16 +643,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%IMG_COMP_PS1%" "!SRC_M
 EXIT /B 0
 
 :comp_video
-IF NOT "!FFMPEG!"=="" (
-    "!FFMPEG!" -y -i "!SRC_MEDIA!" -vf "scale='min(960,iw)':-2" -c:v libx264 -preset veryfast -crf 28 -b:v 850k -maxrate 1050k -bufsize 1500k -movflags +faststart -an "!DST_MEDIA!" >nul 2>&1
-    IF EXIST "!DST_MEDIA!" (
-        SET "DST_SZ=0"
-        FOR %%S IN ("!DST_MEDIA!") DO SET "DST_SZ=%%~zS"
-        IF !DST_SZ! GEQ 1900000 (
-            "!FFMPEG!" -y -i "!SRC_MEDIA!" -vf "scale='min(720,iw)':-2" -c:v libx264 -preset veryfast -crf 31 -b:v 550k -maxrate 700k -bufsize 1000k -movflags +faststart -an "!DST_MEDIA!" >nul 2>&1
-        )
-    )
-)
+:: Kualitas video animated wajib 100% asli original LumaBooth, tidak boleh dikompres/di-encode ulang!
+COPY /Y "!SRC_MEDIA!" "!DST_MEDIA!" >nul 2>&1
 EXIT /B 0
 
 :comp_gif
@@ -641,15 +657,17 @@ EXIT /B 0
 SET "F_SRC=%~1"
 SET "F_DST=%~2"
 SET "F_EXT=%~3"
-IF NOT "!FFMPEG!"=="" (
-    IF /I "!F_EXT!"==".mp4" (
-        "!FFMPEG!" -y -i "!F_SRC!" -vf "scale='min(640,iw)':-2" -c:v libx264 -preset veryfast -crf 32 -b:v 450k -maxrate 600k -bufsize 900k -movflags +faststart -an "!F_DST!" >nul 2>&1
-        EXIT /B 0
-    )
-    IF /I "!F_EXT!"==".mov" (
-        "!FFMPEG!" -y -i "!F_SRC!" -vf "scale='min(640,iw)':-2" -c:v libx264 -preset veryfast -crf 32 -b:v 450k -maxrate 600k -bufsize 900k -movflags +faststart -an "!F_DST!" >nul 2>&1
-        EXIT /B 0
-    )
+IF /I "!F_EXT!"==".mp4" (
+    COPY /Y "!F_SRC!" "!F_DST!" >nul 2>&1
+    EXIT /B 0
+)
+IF /I "!F_EXT!"==".mov" (
+    COPY /Y "!F_SRC!" "!F_DST!" >nul 2>&1
+    EXIT /B 0
+)
+IF /I "!F_EXT!"==".webm" (
+    COPY /Y "!F_SRC!" "!F_DST!" >nul 2>&1
+    EXIT /B 0
 )
 CALL :compress_to_stage "!F_SRC!" "!F_DST!" "!F_EXT!"
 EXIT /B 0

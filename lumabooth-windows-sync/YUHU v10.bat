@@ -596,108 +596,12 @@ IF "!CURL_ERR!"=="0" (
 
 :: Jika CURL_ERR == 22 (HTTP 400 / 413 karena ukuran file masih > 2MB), paksa kompres lebih kecil!
 IF "!CURL_ERR!"=="22" (
-    CALL :force_recompress "!CURRENT_FILE!" "!STAGE_FILE!" "!FILE_EXT!"
-    "%CURL%" -4 --ssl-no-revoke --http1.1 -H "Expect:" --fail --max-time 90 --connect-timeout 15 -s -k -X POST "!API_URL_PRIMARY!" -F "token=!API_TOKEN!" -F "client_event=!EVENT_NAME!" -F "folder_target=!FOLDER_TARGET!" -F "file=@!STAGE_FILE!" >nul 2>&1
-    IF !ERRORLEVEL! EQU 0 (
-        DEL /F /Q "!STAGE_FILE!" >nul 2>&1
-        >> "%SENT_LOG%" ECHO !CURRENT_FILE!
-        > "%LOG_FILE%" ECHO [%DATE% %TIME%] SUKSES UPLOAD [OPTIMIZED] KE FILES.YUHU.CO.ID: !EVENT_NAME!/!FOLDER_TARGET! - !FNAME_ONLY!
-        EXIT /B 0
-    )
-)
-
-:: 2. Kirim ke Server Cadangan (qr.yuhu.co.id)
-"%CURL%" -4 --ssl-no-revoke --http1.1 -H "Expect:" --fail --max-time 90 --connect-timeout 15 -s -k -X POST "!API_URL_FALLBACK!" -F "token=!API_TOKEN!" -F "client_event=!EVENT_NAME!" -F "folder_target=!FOLDER_TARGET!" -F "file=@!STAGE_FILE!" >nul 2>&1
-SET "CURL_ERR_FB=!ERRORLEVEL!"
-
-IF "!CURL_ERR_FB!"=="0" (
-    DEL /F /Q "!STAGE_FILE!" >nul 2>&1
-    >> "%SENT_LOG%" ECHO !CURRENT_FILE!
-    > "%LOG_FILE%" ECHO [%DATE% %TIME%] SUKSES UPLOAD KE QR.YUHU.CO.ID: !EVENT_NAME!/!FOLDER_TARGET! - !FNAME_ONLY!
-    EXIT /B 0
-)
-
-SET /A RETRY_COUNT+=1
-IF !RETRY_COUNT! GEQ 3 (
-    DEL /F /Q "!STAGE_FILE!" >nul 2>&1
-    > "%LOG_FILE%" ECHO [%DATE% %TIME%] LEWATI SEMENTARA (CODE !CURL_ERR!) LANJUT FILE BERIKUTNYA: !FNAME_ONLY!
-    EXIT /B 0
-)
-
-> "%LOG_FILE%" ECHO [%DATE% %TIME%] RETRY !RETRY_COUNT!/3 (CODE !CURL_ERR!) MENGULANG UPLOAD: !FNAME_ONLY!
-ping 127.0.0.1 -n 3 >nul 2>&1
-GOTO :retry_upload
-
-
-:: ============================================================================
-:: HELPER: KOMPRESI CERDAS OTOMATIS (< 1.8 MB) UNTUK FOTO, VIDEO MP4, & GIF
-:: ============================================================================
-:compress_to_stage
-SET "SRC_MEDIA=%~1"
-SET "DST_MEDIA=%~2"
-SET "MEDIA_EXT=%~3"
-
-:: A. Jika file Gambar (.jpg / .jpeg / .png)
-IF /I "!MEDIA_EXT!"==".jpg"  GOTO :comp_image
-IF /I "!MEDIA_EXT!"==".jpeg" GOTO :comp_image
-IF /I "!MEDIA_EXT!"==".png"  GOTO :comp_image
-
-:: B. Jika file Video (.mp4 / .mov / .webm)
-IF /I "!MEDIA_EXT!"==".mp4"  GOTO :comp_video
-IF /I "!MEDIA_EXT!"==".mov"  GOTO :comp_video
-IF /I "!MEDIA_EXT!"==".webm" GOTO :comp_video
-
-:: C. Jika file Animasi GIF (.gif)
-IF /I "!MEDIA_EXT!"==".gif"  GOTO :comp_gif
-EXIT /B 0
-
-:comp_image
-IF NOT "!FFMPEG!"=="" (
-    "!FFMPEG!" -y -i "!SRC_MEDIA!" -vf "scale='min(2200,iw)':-2" -q:v 5 "!DST_MEDIA!" >nul 2>&1
-    IF EXIST "!DST_MEDIA!" (
-        SET "DST_SZ=0"
-        FOR %%S IN ("!DST_MEDIA!") DO SET "DST_SZ=%%~zS"
-        IF !DST_SZ! GEQ 1900000 (
-            "!FFMPEG!" -y -i "!SRC_MEDIA!" -vf "scale='min(1800,iw)':-2" -q:v 8 "!DST_MEDIA!" >nul 2>&1
-        )
-        EXIT /B 0
-    )
-)
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%IMG_COMP_PS1%" "!SRC_MEDIA!" "!DST_MEDIA!" >nul 2>&1
-EXIT /B 0
-
-:comp_video
-IF NOT "!FFMPEG!"=="" (
-    "!FFMPEG!" -y -i "!SRC_MEDIA!" -vf "scale='min(960,iw)':-2" -c:v libx264 -preset veryfast -crf 28 -b:v 850k -maxrate 1050k -bufsize 1500k -movflags +faststart -an "!DST_MEDIA!" >nul 2>&1
-    IF EXIST "!DST_MEDIA!" (
-        SET "DST_SZ=0"
-        FOR %%S IN ("!DST_MEDIA!") DO SET "DST_SZ=%%~zS"
-        IF !DST_SZ! GEQ 1900000 (
-            "!FFMPEG!" -y -i "!SRC_MEDIA!" -vf "scale='min(720,iw)':-2" -c:v libx264 -preset veryfast -crf 31 -b:v 550k -maxrate 700k -bufsize 1000k -movflags +faststart -an "!DST_MEDIA!" >nul 2>&1
-        )
-    )
-)
-EXIT /B 0
-
-:comp_gif
-IF NOT "!FFMPEG!"=="" (
-    "!FFMPEG!" -y -i "!SRC_MEDIA!" -vf "fps=10,scale='min(540,iw)':-1:flags=lanczos" "!DST_MEDIA!" >nul 2>&1
-)
-EXIT /B 0
-
-:force_recompress
+    CALL :force_recompress
 SET "F_SRC=%~1"
 SET "F_DST=%~2"
 SET "F_EXT=%~3"
-IF NOT "!FFMPEG!"=="" (
-    IF /I "!F_EXT!"==".mp4" (
-        "!FFMPEG!" -y -i "!F_SRC!" -vf "scale='min(640,iw)':-2" -c:v libx264 -preset veryfast -crf 32 -b:v 450k -maxrate 600k -bufsize 900k -movflags +faststart -an "!F_DST!" >nul 2>&1
-        EXIT /B 0
-    )
-    IF /I "!F_EXT!"==".mov" (
-        "!FFMPEG!" -y -i "!F_SRC!" -vf "scale='min(640,iw)':-2" -c:v libx264 -preset veryfast -crf 32 -b:v 450k -maxrate 600k -bufsize 900k -movflags +faststart -an "!F_DST!" >nul 2>&1
-        EXIT /B 0
-    )
-)
+IF /I "!F_EXT!"==".mp4" ( COPY /Y "!F_SRC!" "!F_DST!" >nul 2>&1 & EXIT /B 0 )
+IF /I "!F_EXT!"==".mov" ( COPY /Y "!F_SRC!" "!F_DST!" >nul 2>&1 & EXIT /B 0 )
+IF /I "!F_EXT!"==".webm" ( COPY /Y "!F_SRC!" "!F_DST!" >nul 2>&1 & EXIT /B 0 )
 CALL :compress_to_stage "!F_SRC!" "!F_DST!" "!F_EXT!"
 EXIT /B 0

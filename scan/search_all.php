@@ -710,6 +710,13 @@ function collectSessionMedia($dirPath, $baseId, $app_base_url, $folderName) {
             $fname = $item->getFilename();
             if (strpos($fname, $baseId) !== false && strpos($fname, '.part_') === false && strpos($fname, 'thumb') === false) {
                 $ext = strtolower($item->getExtension());
+                $rel_lower = strtolower($item->getPathname());
+
+                // Di folder Animated, abaikan thumbnail JPG pendamping MP4 LumaBooth
+                if (strpos($rel_lower, 'animated') !== false && in_array($ext, ['jpg', 'jpeg', 'png'])) {
+                    continue;
+                }
+
                 if (in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'mp4', 'mov', 'webm', 'gif'])) {
                     $rel = str_replace('\\', '/', substr($item->getPathname(), strlen($dirPath) + 1));
                     $encodedPath = implode('/', array_map('rawurlencode', explode('/', $rel)));
@@ -735,6 +742,20 @@ function collectSessionMedia($dirPath, $baseId, $app_base_url, $folderName) {
                 }
             }
         }
+    }
+
+    // Jika sesi memiliki video MP4/MOV/WebM asli, singkirkan GIF agar kualitas tidak pecah
+    $hasHdVideo = false;
+    foreach ($mediaList as $m) {
+        if (!empty($m['is_video'])) {
+            $hasHdVideo = true;
+            break;
+        }
+    }
+    if ($hasHdVideo) {
+        $mediaList = array_values(array_filter($mediaList, function($m) {
+            return ($m['ext'] ?? '') !== 'gif';
+        }));
     }
 
     // Urutkan: Foto Cetak di urutan pertama, Video kedua, Foto Satuan berikutnya
