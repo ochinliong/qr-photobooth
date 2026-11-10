@@ -515,6 +515,8 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
     <script>
         let gallerySessions = <?php echo json_encode($sessions); ?>;
         let totalFilesCount = <?php echo count($files_data); ?>;
+        const isVipMode = <?php echo $is_vip_mode ? 'true' : 'false'; ?>;
+        const isAdminOrOp = <?php echo $is_admin_or_op ? 'true' : 'false'; ?>;
     </script>
 </head>
 <body>
@@ -603,7 +605,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
                         <?php if (!empty($session['is_pinned'])): ?>
                             <div class="pin-badge">
                                 <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
-                                <span>FAVORIT PENGANTIN</span>
+                                <span>FAVORITE</span>
                             </div>
                         <?php endif; ?>
 
@@ -625,7 +627,16 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
 
     <!-- Modal / Lightbox Multi-file per Sesi -->
     <div id="mediaModal" class="modal">
+        <!-- Icon Bintang Favorite di Pojok Kiri Atas Modal -->
+        <button type="button" id="modalStarBtn" class="modal-star-btn" <?php echo ($is_vip_mode || $is_admin_or_op) ? 'onclick="togglePinCurrentSession(event)"' : 'style="pointer-events:none;"'; ?> title="Favorite">
+            <svg id="starSvg" viewBox="0 0 24 24">
+                <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>
+            </svg>
+        </button>
+
+        <!-- Tombol Close di Pojok Kanan Atas Modal -->
         <span class="close-btn" onclick="closeModal()">&times;</span>
+
         <div class="modal-content-wrapper">
             <a class="nav-btn prev-btn" onclick="changeSlide(-1)">&#10094;</a>
             <div id="modalMediaContainer"></div>
@@ -633,13 +644,6 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
 
             <div class="modal-actions">
                 <div class="slide-dots" id="slideDots"></div>
-
-                <?php if ($is_vip_mode || $is_admin_or_op): ?>
-                <button type="button" id="btnPinFavorite" class="btn-pin-favorite" onclick="togglePinCurrentSession(event)">
-                    <span id="pinBtnIcon">⭐</span>
-                    <span id="pinBtnText">Jadikan Favorit Pengantin</span>
-                </button>
-                <?php endif; ?>
 
                 <button type="button" id="downloadBtn" class="btn-download" onclick="handleMediaDownload(event)">
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
@@ -804,7 +808,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
                     const cover = session.files[0];
                     const isVid = ['mp4', 'mov', 'webm'].includes(cover.ext);
                     const pinTag = session.is_pinned
-                        ? `<div class="pin-badge"><svg viewBox="0 0 24 24" fill="currentColor" style="width:13px;height:13px;"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg><span>FAVORIT PENGANTIN</span></div>`
+                        ? `<div class="pin-badge"><svg viewBox="0 0 24 24" fill="currentColor" style="width:13px;height:13px;"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg><span>FAVORITE</span></div>`
                         : '';
                     const mediaTag = isVid
                         ? `<video src="${cover.path}" muted loop autoplay playsinline></video><div class="play-icon">▶</div>`

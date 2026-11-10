@@ -16,19 +16,23 @@ let currentIndex = 0;
 let scrollRaf = null;
 
 function updatePinButtonState() {
-    const pinBtn = document.getElementById('btnPinFavorite');
-    if (!pinBtn || !gallerySessions || !gallerySessions[currentSessionIndex]) return;
+    const starBtn = document.getElementById('modalStarBtn');
+    if (!starBtn || !gallerySessions || !gallerySessions[currentSessionIndex]) return;
     const isPinned = !!gallerySessions[currentSessionIndex].is_pinned;
-    const pinIcon = document.getElementById('pinBtnIcon');
-    const pinText = document.getElementById('pinBtnText');
+    const canManagePin = (typeof isVipMode !== 'undefined' && isVipMode) || (typeof isAdminOrOp !== 'undefined' && isAdminOrOp);
+
     if (isPinned) {
-        pinBtn.classList.add('is-pinned');
-        if (pinIcon) pinIcon.innerText = '📌';
-        if (pinText) pinText.innerText = 'Favorit Pengantin (Ter-pin di Atas)';
+        starBtn.classList.add('is-pinned');
+        starBtn.title = canManagePin ? 'Favorit (Klik untuk melepas favorit)' : 'Foto Favorit';
+        starBtn.style.display = 'flex';
     } else {
-        pinBtn.classList.remove('is-pinned');
-        if (pinIcon) pinIcon.innerText = '⭐';
-        if (pinText) pinText.innerText = 'Jadikan Favorit Pengantin';
+        starBtn.classList.remove('is-pinned');
+        starBtn.title = 'Tandai sebagai Favorit';
+        if (!canManagePin) {
+            starBtn.style.display = 'none';
+        } else {
+            starBtn.style.display = 'flex';
+        }
     }
 }
 
@@ -36,8 +40,8 @@ async function togglePinCurrentSession(e) {
     if (e) e.stopPropagation();
     if (!gallerySessions || !gallerySessions[currentSessionIndex]) return;
     const sess = gallerySessions[currentSessionIndex];
-    const pinBtn = document.getElementById('btnPinFavorite');
-    if (pinBtn) pinBtn.disabled = true;
+    const starBtn = document.getElementById('modalStarBtn');
+    if (starBtn) starBtn.disabled = true;
 
     try {
         const formData = new FormData();
@@ -65,12 +69,12 @@ async function togglePinCurrentSession(e) {
                 renderGridHtml();
             }
         } else {
-            alert(data.error || 'Gagal mengubah status pin.');
+            alert(data.error || 'Gagal mengubah status favorit.');
         }
     } catch (err) {
         alert('Terjadi kesalahan jaringan.');
     } finally {
-        if (pinBtn) pinBtn.disabled = false;
+        if (starBtn) starBtn.disabled = false;
     }
 }
 
