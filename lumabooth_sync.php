@@ -85,6 +85,20 @@ if (!file_exists(__DIR__ . '/.db_schema_v3_visual_search_migrated')) {
     } catch (Exception $e) {}
 }
 
+// Migrasi satu kali: tambahkan kolom keterangan dan lock_after_event jika belum ada
+if (!file_exists(__DIR__ . '/.db_schema_v4_keterangan_migrated')) {
+    try {
+        $chkCols = $pdo->query("SHOW COLUMNS FROM clients")->fetchAll(PDO::FETCH_COLUMN);
+        if ($chkCols && !in_array('keterangan', $chkCols, true)) {
+            $pdo->exec("ALTER TABLE clients ADD COLUMN keterangan TEXT NULL DEFAULT NULL AFTER lokasi");
+        }
+        if ($chkCols && !in_array('lock_after_event', $chkCols, true)) {
+            $pdo->exec("ALTER TABLE clients ADD COLUMN lock_after_event TINYINT(1) NOT NULL DEFAULT 1 AFTER enable_visual_search");
+        }
+        @file_put_contents(__DIR__ . '/.db_schema_v4_keterangan_migrated', date('Y-m-d H:i:s'));
+    } catch (Exception $e) {}
+}
+
 if (!function_exists('ensureLumaboothEventInDb')) {
     function ensureLumaboothEventInDb($pdo, $base_url, $folder_name, $is_active_upload = false, $preloaded_clients = null) {
         $folder_name = trim(str_replace(['..', '/', '\\', "\0"], '', (string)$folder_name));
