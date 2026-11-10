@@ -192,7 +192,7 @@ if (!function_exists('ensureLumaboothEventInDb')) {
 
             // INSERT ke Database TERLEBIH DAHULU di dalam Lock (< 1ms)
             try {
-                $ins = $pdo->prepare("INSERT IGNORE INTO clients (nama_client, slug, lokasi, tanggal_event, jam_mulai, jam_selesai, qr_code_path, folder_foto_path, enable_visual_search) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)");
+                $ins = $pdo->prepare("INSERT IGNORE INTO clients (nama_client, slug, lokasi, keterangan, tanggal_event, jam_mulai, jam_selesai, qr_code_path, folder_foto_path, enable_visual_search, lock_after_event) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, 1, 1)");
                 $ins->execute([
                     $readable_name,
                     $slug,
@@ -204,17 +204,31 @@ if (!function_exists('ensureLumaboothEventInDb')) {
                     $gallery_link
                 ]);
             } catch (Exception $e) {
-                $ins = $pdo->prepare("INSERT IGNORE INTO clients (nama_client, slug, lokasi, tanggal_event, jam_mulai, jam_selesai, qr_code_path, folder_foto_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-                $ins->execute([
-                    $readable_name,
-                    $slug,
-                    $lokasi_default,
-                    $tanggal_event,
-                    $jam_mulai,
-                    $jam_selesai,
-                    'uploads/qrcodes/' . $qr_filename,
-                    $gallery_link
-                ]);
+                try {
+                    $ins = $pdo->prepare("INSERT IGNORE INTO clients (nama_client, slug, lokasi, tanggal_event, jam_mulai, jam_selesai, qr_code_path, folder_foto_path, enable_visual_search) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)");
+                    $ins->execute([
+                        $readable_name,
+                        $slug,
+                        $lokasi_default,
+                        $tanggal_event,
+                        $jam_mulai,
+                        $jam_selesai,
+                        'uploads/qrcodes/' . $qr_filename,
+                        $gallery_link
+                    ]);
+                } catch (Exception $e2) {
+                    $ins = $pdo->prepare("INSERT IGNORE INTO clients (nama_client, slug, lokasi, tanggal_event, jam_mulai, jam_selesai, qr_code_path, folder_foto_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+                    $ins->execute([
+                        $readable_name,
+                        $slug,
+                        $lokasi_default,
+                        $tanggal_event,
+                        $jam_mulai,
+                        $jam_selesai,
+                        'uploads/qrcodes/' . $qr_filename,
+                        $gallery_link
+                    ]);
+                }
             }
 
             $new_id = (int)$pdo->lastInsertId();

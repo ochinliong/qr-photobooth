@@ -41,6 +41,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $jam_mulai = !empty($_POST['jam_mulai']) ? $_POST['jam_mulai'] : null;
     $jam_selesai = !empty($_POST['jam_selesai']) ? $_POST['jam_selesai'] : null;
     $enable_visual_search = isset($_POST['enable_visual_search']) ? 1 : 0;
+    $keterangan = trim($_POST['keterangan'] ?? '');
+    $lock_after_event = isset($_POST['lock_after_event']) ? 1 : 0;
 
     // Buat Direct Link Otomatis sesuai Tahun & Nama Klien (tanpa spasi)
     $tahun_event = $tanggal_event ? date('Y', strtotime($tanggal_event)) : date('Y');
@@ -66,8 +68,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     }
 
     try {
-        $stmt = $pdo->prepare("UPDATE clients SET nama_client = ?, lokasi = ?, folder_foto_path = ?, tanggal_event = ?, jam_mulai = ?, jam_selesai = ?, enable_visual_search = ? WHERE id = ?");
-        $stmt->execute([$nama_client, $lokasi, $link_galeri, $tanggal_event, $jam_mulai, $jam_selesai, $enable_visual_search, $id]);
+        $stmt = $pdo->prepare("UPDATE clients SET nama_client = ?, lokasi = ?, keterangan = ?, folder_foto_path = ?, tanggal_event = ?, jam_mulai = ?, jam_selesai = ?, enable_visual_search = ?, lock_after_event = ? WHERE id = ?");
+        $stmt->execute([$nama_client, $lokasi, $keterangan, $link_galeri, $tanggal_event, $jam_mulai, $jam_selesai, $enable_visual_search, $lock_after_event, $id]);
     } catch (Exception $e) {
         $stmt = $pdo->prepare("UPDATE clients SET nama_client = ?, lokasi = ?, folder_foto_path = ?, tanggal_event = ?, jam_mulai = ?, jam_selesai = ? WHERE id = ?");
         $stmt->execute([$nama_client, $lokasi, $link_galeri, $tanggal_event, $jam_mulai, $jam_selesai, $id]);
@@ -113,6 +115,10 @@ $init_direct_link = rtrim($base_url, '/') . '/' . $init_year . '/' . $init_clean
                 <textarea name="lokasi" placeholder="Baris 1: Nama Gedung&#10;Baris 2: Nama Kota" class="mt-1 w-full px-3 py-2 border rounded-md focus:border-blue-500 focus:outline-none" rows="2"><?= htmlspecialchars(($client['lokasi'] ?? '') === '-' ? '' : ($client['lokasi'] ?? '')) ?></textarea>
             </div>
             <div>
+                <label class="block text-sm font-medium text-gray-700">Keterangan / Catatan Tambahan <span class="text-xs text-gray-400 font-normal">(Muncul di bawah lokasi alamat)</span></label>
+                <textarea name="keterangan" placeholder="Contoh: Shift A: 10.00 - 13.00 WIB&#10;Catatan khusus untuk tamu..." class="mt-1 w-full px-3 py-2 border rounded-md focus:border-blue-500 focus:outline-none" rows="2"><?= htmlspecialchars($client['keterangan'] ?? '') ?></textarea>
+            </div>
+            <div>
                 <label class="block text-sm font-medium text-gray-700">Tujuan Galeri (Folder LumaBooth / URL)</label>
                 <input type="text" name="folder_foto_path" id="input_folder" value="<?= htmlspecialchars($client['folder_foto_path']) ?>" placeholder="Default: <?= htmlspecialchars($default_gallery_link) ?>" class="mt-1 w-full px-3 py-2 border rounded-md focus:border-blue-500 focus:outline-none">
                 <div class="mt-1.5 flex items-center gap-2">
@@ -142,14 +148,26 @@ $init_direct_link = rtrim($base_url, '/') . '/' . $init_year . '/' . $init_clean
             <p class="text-xs text-amber-600 font-medium mt-1">
                 💡 <em>Catatan:</em> Project baru belum akan ditampilkan di halaman Live Events (files.yuhu.co.id) sampai Tanggal dan Jam Acara di atas diisi.
             </p>
-            <div class="p-3.5 bg-purple-50/80 border border-purple-200 rounded-lg">
-                <label class="flex items-start gap-3 cursor-pointer">
-                    <input type="checkbox" name="enable_visual_search" value="1" <?= (!isset($client['enable_visual_search']) || (int)$client['enable_visual_search'] === 1) ? 'checked' : '' ?> class="mt-0.5 h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded">
-                    <div>
-                        <span class="block text-xs font-bold text-purple-900">📸 Fitur Pencarian Foto dari Hasil Cetak (Visual Search)</span>
-                        <span class="block text-[11px] text-purple-700 mt-0.5">Jika aktif, tamu dapat memfoto kertas cetakan fisik untuk mencari softfile secara otomatis tanpa kode. Jika dinonaktifkan, tombol ini tidak akan tampil di galeri acara ini.</span>
-                    </div>
-                </label>
+            <div class="space-y-3">
+                <div class="p-3.5 bg-purple-50/80 border border-purple-200 rounded-lg">
+                    <label class="flex items-start gap-3 cursor-pointer">
+                        <input type="checkbox" name="enable_visual_search" value="1" <?= (!isset($client['enable_visual_search']) || (int)$client['enable_visual_search'] === 1) ? 'checked' : '' ?> class="mt-0.5 h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded">
+                        <div>
+                            <span class="block text-xs font-bold text-purple-900">📸 Fitur Pencarian Foto dari Hasil Cetak (Visual Search)</span>
+                            <span class="block text-[11px] text-purple-700 mt-0.5">Jika aktif, tamu dapat memfoto kertas cetakan fisik untuk mencari softfile secara otomatis tanpa kode. Jika dinonaktifkan, tombol ini tidak akan tampil di galeri acara ini.</span>
+                        </div>
+                    </label>
+                </div>
+
+                <div class="p-3.5 bg-amber-50/80 border border-amber-200 rounded-lg">
+                    <label class="flex items-start gap-3 cursor-pointer">
+                        <input type="checkbox" name="lock_after_event" value="1" <?= (!isset($client['lock_after_event']) || (int)$client['lock_after_event'] === 1) ? 'checked' : '' ?> class="mt-0.5 h-4 w-4 text-amber-600 focus:ring-amber-500 border-gray-300 rounded">
+                        <div>
+                            <span class="block text-xs font-bold text-amber-900">🔒 Kunci Galeri Otomatis Setelah Jam Acara Selesai (Privasi Tamu)</span>
+                            <span class="block text-[11px] text-amber-700 mt-0.5">Sesuai jam_selesai acara. Tamu tidak dapat melihat galeri lagi & diarahkan menghubungi admin via WA untuk request foto. (Pengantin via link VIP tetap bisa akses).</span>
+                        </div>
+                    </label>
+                </div>
             </div>
             <div class="flex flex-wrap items-center justify-between gap-3 pt-6">
                 <a href="gallery.php?id=<?= $client['id'] ?>" class="bg-emerald-50 text-emerald-700 border border-emerald-200 px-4 py-2 rounded-md hover:bg-emerald-100 font-semibold text-sm">

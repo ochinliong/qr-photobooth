@@ -448,6 +448,10 @@ FOR /F "usebackq delims=" %%A IN ("%BATCH_FILE%") DO (
 )
 
 DEL /F /Q "%BATCH_FILE%" >nul 2>&1
+IF EXIST "%WORK_DIR%deferred_retry.txt" (
+    TYPE "%WORK_DIR%deferred_retry.txt" >> "%QUEUE_FILE%" 2>nul
+    DEL /F /Q "%WORK_DIR%deferred_retry.txt" >nul 2>&1
+)
 IF EXIST "%QUEUE_FILE%" GOTO :worker_main_loop
 IF EXIST "%PRIORITY_QUEUE%" GOTO :worker_main_loop
 EXIT /B 0
@@ -549,7 +553,11 @@ IF NOT EXIST "!CURRENT_FILE!" (
 )
 
 :: 1. Kirim ke Server Utama (files.yuhu.co.id)
-"%CURL%" -4 --ssl-no-revoke --http1.1 -H "Expect:" --fail --max-time 300 --connect-timeout 20 -s -k -X POST "!API_URL_PRIMARY!" -F "token=!API_TOKEN!" -F "client_event=!EVENT_NAME!" -F "folder_target=!FOLDER_TARGET!" -F "file=@!STAGE_FILE!" >nul 2>&1
+IF "!IS_VIDEO!"=="1" (
+    "%CURL%" -4 --ssl-no-revoke --http1.1 -H "Expect:" --fail --max-time 90 --connect-timeout 10 -s -k -X POST "!API_URL_PRIMARY!" -F "token=!API_TOKEN!" -F "client_event=!EVENT_NAME!" -F "folder_target=!FOLDER_TARGET!" -F "file=@!STAGE_FILE!" >nul 2>&1
+) ELSE (
+    "%CURL%" -4 --ssl-no-revoke --http1.1 -H "Expect:" --fail --max-time 45 --connect-timeout 8 -s -k -X POST "!API_URL_PRIMARY!" -F "token=!API_TOKEN!" -F "client_event=!EVENT_NAME!" -F "folder_target=!FOLDER_TARGET!" -F "file=@!STAGE_FILE!" >nul 2>&1
+)
 SET "CURL_ERR=!ERRORLEVEL!"
 
 IF "!CURL_ERR!"=="0" (
@@ -563,7 +571,7 @@ IF "!CURL_ERR!"=="0" (
 IF "!CURL_ERR!"=="22" (
     IF "!IS_VIDEO!"=="1" (
         :: Untuk video: Kirim via Raw Binary Stream agar lolos 100% tanpa kompresi sedikitpun!
-        "%CURL%" -4 --ssl-no-revoke --http1.1 -H "Expect:" --fail --max-time 300 --connect-timeout 20 -s -k -X POST "!API_URL_PRIMARY!?token=!API_TOKEN!" -H "X-Client-Event: !EVENT_NAME!" -H "X-Folder-Target: !FOLDER_TARGET!" -H "X-File-Name: !FNAME_ONLY!" -H "X-File-Size: !FILE_SIZE!" --data-binary "@!STAGE_FILE!" >nul 2>&1
+        "%CURL%" -4 --ssl-no-revoke --http1.1 -H "Expect:" --fail --max-time 90 --connect-timeout 10 -s -k -X POST "!API_URL_PRIMARY!?token=!API_TOKEN!" -H "X-Client-Event: !EVENT_NAME!" -H "X-Folder-Target: !FOLDER_TARGET!" -H "X-File-Name: !FNAME_ONLY!" -H "X-File-Size: !FILE_SIZE!" --data-binary "@!STAGE_FILE!" >nul 2>&1
         IF !ERRORLEVEL! EQU 0 (
             DEL /F /Q "!STAGE_FILE!" >nul 2>&1
             >> "%SENT_LOG%" ECHO !CURRENT_FILE!
@@ -583,7 +591,7 @@ IF "!CURL_ERR!"=="22" (
 )
 
 :: 2. Kirim ke Server Cadangan (qr.yuhu.co.id)
-"%CURL%" -4 --ssl-no-revoke --http1.1 -H "Expect:" --fail --max-time 300 --connect-timeout 20 -s -k -X POST "!API_URL_FALLBACK!" -F "token=!API_TOKEN!" -F "client_event=!EVENT_NAME!" -F "folder_target=!FOLDER_TARGET!" -F "file=@!STAGE_FILE!" >nul 2>&1
+"%CURL%" -4 --ssl-no-revoke --http1.1 -H "Expect:" --fail --max-time 35 --connect-timeout 8 -s -k -X POST "!API_URL_FALLBACK!" -F "token=!API_TOKEN!" -F "client_event=!EVENT_NAME!" -F "folder_target=!FOLDER_TARGET!" -F "file=@!STAGE_FILE!" >nul 2>&1
 SET "CURL_ERR_FB=!ERRORLEVEL!"
 
 IF "!CURL_ERR_FB!"=="0" (
@@ -594,14 +602,15 @@ IF "!CURL_ERR_FB!"=="0" (
 )
 
 SET /A RETRY_COUNT+=1
-IF !RETRY_COUNT! GEQ 3 (
+IF !RETRY_COUNT! GEQ 2 (
     DEL /F /Q "!STAGE_FILE!" >nul 2>&1
-    > "%LOG_FILE%" ECHO [%DATE% %TIME%] LEWATI SEMENTARA (CODE !CURL_ERR!) LANJUT FILE BERIKUTNYA: !FNAME_ONLY!
+    >> "%WORK_DIR%deferred_retry.txt" ECHO !CURRENT_FILE!
+    > "%LOG_FILE%" ECHO [%DATE% %TIME%] TUNDA KE AKHIR ANTRIAN (CODE !CURL_ERR!) AGAR FOTO LAIN TIDAK TERPENDING: !FNAME_ONLY!
     EXIT /B 0
 )
 
-> "%LOG_FILE%" ECHO [%DATE% %TIME%] RETRY !RETRY_COUNT!/3 (CODE !CURL_ERR!) MENGULANG UPLOAD: !FNAME_ONLY!
-ping 127.0.0.1 -n 3 >nul 2>&1
+> "%LOG_FILE%" ECHO [%DATE% %TIME%] RETRY CEPAT (CODE !CURL_ERR!) UPLOAD ULANG: !FNAME_ONLY!
+ping 127.0.0.1 -n 2 >nul 2>&1
 GOTO :retry_upload
 
 

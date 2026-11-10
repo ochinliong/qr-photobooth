@@ -148,8 +148,16 @@ if (isset($_GET['check_state'])) {
                                         <?php if ($has_lokasi): ?>
                                         <div class="flex items-start">
                                             <svg class="w-3.5 h-3.5 mr-1.5 flex-shrink-0 text-red-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.242-4.243a8 8 0 1111.314 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-                                            <div class="leading-relaxed">
+                                            <div class="leading-relaxed whitespace-pre-line">
                                                 <?= nl2br(htmlspecialchars($c['lokasi'])) ?>
+                                            </div>
+                                        </div>
+                                        <?php endif; ?>
+                                        <?php if (!empty(trim($c['keterangan'] ?? ''))): ?>
+                                        <div class="flex items-start text-slate-600 bg-amber-50/70 p-2 rounded-lg border border-amber-100">
+                                            <svg class="w-3.5 h-3.5 mr-1.5 flex-shrink-0 text-amber-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                            <div class="leading-relaxed whitespace-pre-line text-[11px] font-medium text-slate-700">
+                                                <?= nl2br(htmlspecialchars(trim($c['keterangan']))) ?>
                                             </div>
                                         </div>
                                         <?php endif; ?>

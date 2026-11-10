@@ -11,15 +11,77 @@ const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
               (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
 let currentSessionFiles = [];
+let currentSessionIndex = 0;
 let currentIndex = 0;
 let scrollRaf = null;
+
+function updatePinButtonState() {
+    const pinBtn = document.getElementById('btnPinFavorite');
+    if (!pinBtn || !gallerySessions || !gallerySessions[currentSessionIndex]) return;
+    const isPinned = !!gallerySessions[currentSessionIndex].is_pinned;
+    const pinIcon = document.getElementById('pinBtnIcon');
+    const pinText = document.getElementById('pinBtnText');
+    if (isPinned) {
+        pinBtn.classList.add('is-pinned');
+        if (pinIcon) pinIcon.innerText = '📌';
+        if (pinText) pinText.innerText = 'Favorit Pengantin (Ter-pin di Atas)';
+    } else {
+        pinBtn.classList.remove('is-pinned');
+        if (pinIcon) pinIcon.innerText = '⭐';
+        if (pinText) pinText.innerText = 'Jadikan Favorit Pengantin';
+    }
+}
+
+async function togglePinCurrentSession(e) {
+    if (e) e.stopPropagation();
+    if (!gallerySessions || !gallerySessions[currentSessionIndex]) return;
+    const sess = gallerySessions[currentSessionIndex];
+    const pinBtn = document.getElementById('btnPinFavorite');
+    if (pinBtn) pinBtn.disabled = true;
+
+    try {
+        const formData = new FormData();
+        formData.append('action', 'toggle_pin');
+        formData.append('session_id', sess.id);
+
+        const res = await fetch(window.location.href, {
+            method: 'POST',
+            body: formData
+        });
+        const data = await res.json();
+        if (data && data.success) {
+            sess.is_pinned = !!data.is_pinned;
+            updatePinButtonState();
+
+            // Urutkan ulang sesi agar sesi ter-pin langsung melompat ke urutan teratas
+            gallerySessions.sort((a, b) => {
+                const aPin = a.is_pinned ? 1 : 0;
+                const bPin = b.is_pinned ? 1 : 0;
+                if (aPin !== bPin) return bPin - aPin;
+                return b.time - a.time;
+            });
+            currentSessionIndex = gallerySessions.findIndex(s => s.id === sess.id);
+            if (typeof renderGridHtml === 'function') {
+                renderGridHtml();
+            }
+        } else {
+            alert(data.error || 'Gagal mengubah status pin.');
+        }
+    } catch (err) {
+        alert('Terjadi kesalahan jaringan.');
+    } finally {
+        if (pinBtn) pinBtn.disabled = false;
+    }
+}
 
 function openSession(sessionIndex) {
     if (!gallerySessions || !gallerySessions[sessionIndex]) return;
 
+    currentSessionIndex = sessionIndex;
     currentSessionFiles = gallerySessions[sessionIndex].files;
     currentIndex = 0;
 
+    updatePinButtonState();
     renderAllSlides();
 
     if (currentSessionFiles.length > 1) {

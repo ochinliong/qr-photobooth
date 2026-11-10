@@ -12,11 +12,13 @@ CREATE TABLE IF NOT EXISTS clients (
     nama_client VARCHAR(255) NOT NULL,
     slug VARCHAR(255) NOT NULL UNIQUE,
     lokasi VARCHAR(255) NOT NULL DEFAULT '-',
+    keterangan TEXT NULL DEFAULT NULL,
     tanggal_event DATE NULL DEFAULT NULL,
     jam_mulai TIME NULL DEFAULT NULL,
     jam_selesai TIME NULL DEFAULT NULL,
     qr_code_path VARCHAR(255) NOT NULL,
     folder_foto_path VARCHAR(255) NOT NULL,
     enable_visual_search TINYINT(1) NOT NULL DEFAULT 1,
+    lock_after_event TINYINT(1) NOT NULL DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

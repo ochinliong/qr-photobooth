@@ -131,14 +131,57 @@ if (!$event_exists) {
 $display_title = $db_client ? $db_client['nama_client'] : str_replace('_', ' ', $resolved_folder);
 $display_subtitle = "Terima kasih telah merayakan bersama kami!";
 if ($db_client && !empty(trim($db_client['lokasi'] ?? '')) && trim($db_client['lokasi']) !== '-') {
-    $display_subtitle = str_replace(["\r\n", "\n"], ' • ', $db_client['lokasi']);
+    $display_subtitle = trim($db_client['lokasi']);
 }
+$display_keterangan = ($db_client && !empty(trim($db_client['keterangan'] ?? ''))) ? trim($db_client['keterangan']) : '';
 $display_tab_title = "Galeri - " . $display_title;
 $visible_folders = ['Prints', 'Animated'];
 $hidden_files = [];
+$pinned_sessions = [];
 $is_vip_mode = isset($_GET['vip']) && $_GET['vip'] === '1';
-$enable_visual_search = true;
+$is_admin_or_op = (!empty($_SESSION['admin_id']) || !empty($_SESSION['operator_logged_in']));
+$is_single_view_param = !empty($_GET['single_file']) ? trim($_GET['single_file']) : (!empty($_GET['file']) ? trim($_GET['file']) : '');
 
+// Cek Penguncian Galeri setelah Acara Selesai (Fitur Kerahasiaan File)
+$lock_setting = isset($db_client['lock_after_event']) ? (int)$db_client['lock_after_event'] : 1;
+$is_event_locked = false;
+if ($lock_setting === 1 && $db_client && !empty($db_client['tanggal_event']) && !empty($db_client['jam_selesai'])) {
+    try {
+        $tz = new DateTimeZone('Asia/Jakarta');
+        $now_dt = new DateTime('now', $tz);
+        $end_dt = new DateTime($db_client['tanggal_event'] . ' ' . $db_client['jam_selesai'], $tz);
+        if (!empty($db_client['jam_mulai'])) {
+            $start_dt = new DateTime($db_client['tanggal_event'] . ' ' . $db_client['jam_mulai'], $tz);
+            if ($end_dt < $start_dt) {
+                $end_dt->modify('+1 day');
+            }
+        }
+        if ($now_dt > $end_dt) {
+            $is_event_locked = true;
+        }
+    } catch (Exception $e) {}
+}
+
+// Tamu umum tidak dapat mengakses galeri jika acara sudah selesai (kecuali VIP atau link single-file dari operator)
+if ($is_event_locked && !$is_vip_mode && !$is_admin_or_op && empty($is_single_view_param)) {
+    if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode([
+            'session_count' => 0,
+            'total_files' => 0,
+            'zip_total_files' => 0,
+            'zip_total_mb' => 0,
+            'sessions' => [],
+            'error' => 'gallery_locked',
+            'message' => 'Akses galeri umum telah selesai.'
+        ]);
+        exit;
+    }
+    include __DIR__ . '/locked_view.php';
+    exit;
+}
+
+$enable_visual_search = true;
 if ($db_client && isset($db_client['enable_visual_search'])) {
     $enable_visual_search = ((int)$db_client['enable_visual_search'] === 1);
 }
@@ -162,9 +205,50 @@ if (file_exists($config_path)) {
     if (isset($json['hidden_files']) && is_array($json['hidden_files'])) {
         $hidden_files = $json['hidden_files'];
     }
+    if (isset($json['pinned_sessions']) && is_array($json['pinned_sessions'])) {
+        $pinned_sessions = $json['pinned_sessions'];
+    }
     if (isset($json['enable_visual_search'])) {
         $enable_visual_search = (bool)$json['enable_visual_search'];
     }
+}
+
+// Endpoint AJAX: Toggle Pin Foto Favorit (Khusus Pengantin VIP / Admin)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'toggle_pin') {
+    header('Content-Type: application/json; charset=utf-8');
+    if (!$is_vip_mode && !$is_admin_or_op) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'error' => 'Akses ditolak. Fitur pin favorit khusus Pengantin (VIP).']);
+        exit;
+    }
+    $sess_id = trim($_POST['session_id'] ?? '');
+    if ($sess_id === '') {
+        echo json_encode(['success' => false, 'error' => 'ID sesi tidak valid']);
+        exit;
+    }
+    $cfg = file_exists($config_path) ? (@json_decode(file_get_contents($config_path), true) ?: []) : [];
+    $cur_pinned = $cfg['pinned_sessions'] ?? [];
+    if (!is_array($cur_pinned)) $cur_pinned = [];
+
+    $pos = array_search($sess_id, $cur_pinned);
+    $now_pinned = false;
+    if ($pos !== false) {
+        array_splice($cur_pinned, $pos, 1);
+        $now_pinned = false;
+    } else {
+        $cur_pinned[] = $sess_id;
+        $now_pinned = true;
+    }
+    $cfg['pinned_sessions'] = array_values(array_unique($cur_pinned));
+    @file_put_contents($config_path, json_encode($cfg, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+
+    echo json_encode([
+        'success' => true,
+        'session_id' => $sess_id,
+        'is_pinned' => $now_pinned,
+        'pinned_sessions' => $cfg['pinned_sessions']
+    ]);
+    exit;
 }
 
 // Membaca file rekursif dari photos/{EventName}/{Prints,Animated,Singles,...}
@@ -330,10 +414,40 @@ foreach ($files_data as $data) {
     }
 }
 
-// Urutkan sesi dari yang paling baru
+// Tandai status is_pinned pada setiap sesi
+foreach ($sessions_map as &$session_ref) {
+    $session_ref['is_pinned'] = in_array($session_ref['id'], $pinned_sessions, true);
+}
+unset($session_ref);
+
+// Urutkan sesi: Sesi Favorit Pengantin (Pinned) selalu paling atas, lalu urut waktu terbaru
 usort($sessions_map, function($a, $b) {
+    $a_pin = !empty($a['is_pinned']) ? 1 : 0;
+    $b_pin = !empty($b['is_pinned']) ? 1 : 0;
+    if ($a_pin !== $b_pin) {
+        return $b_pin - $a_pin;
+    }
     return $b['time'] - $a['time'];
 });
+
+// Mode Tampilan File Tunggal (Khusus jika dibuka via QR Code Operator per-file)
+$is_single_view_active = false;
+$single_view_session = null;
+if (!empty($is_single_view_param)) {
+    $needle_clean = strtolower(basename($is_single_view_param));
+    foreach ($sessions_map as $s_check) {
+        foreach ($s_check['files'] as $f_check) {
+            if (strtolower(basename($f_check['file'])) === $needle_clean || strtolower($f_check['file']) === strtolower($is_single_view_param)) {
+                $single_view_session = $s_check;
+                $is_single_view_active = true;
+                break 2;
+            }
+        }
+    }
+    if ($is_single_view_active && $single_view_session) {
+        $sessions_map = [$single_view_session['id'] => $single_view_session];
+    }
+}
 
 // Urutkan isi file dalam tiap sesi: 1. Prints (Cover Utama), 2. Video Animated (MP4 Asli), 3. Animasi GIF, 4. Singles
 foreach ($sessions_map as &$session) {
@@ -411,7 +525,12 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
         </div>
         <div class="event-info">
             <h1><?php echo htmlspecialchars($display_title); ?></h1>
-            <p><?php echo nl2br(htmlspecialchars($display_subtitle)); ?></p>
+            <p class="event-location"><?php echo nl2br(htmlspecialchars($display_subtitle)); ?></p>
+            <?php if (!empty($display_keterangan)): ?>
+                <div class="event-keterangan">
+                    <span>📝 <?php echo nl2br(htmlspecialchars($display_keterangan)); ?></span>
+                </div>
+            <?php endif; ?>
         </div>
 
         <?php if ($is_vip_mode): ?>
@@ -441,27 +560,65 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
     </header>
 
     <main class="gallery-container">
-        <div id="emptyState" class="empty-state" style="<?php echo empty($sessions) ? '' : 'display:none;'; ?>">
-            <p>Belum ada foto yang tersedia untuk acara ini.</p>
-        </div>
+        <?php if ($is_single_view_active && !empty($sessions)): ?>
+            <?php $single_sess = $sessions[0]; ?>
+            <div class="single-showcase-wrap">
+                <div class="single-showcase-card">
+                    <div class="single-showcase-badge">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                        <span>Akses Khusus File Anda</span>
+                    </div>
 
-        <div id="masonryGrid" class="masonry-grid" style="<?php echo empty($sessions) ? 'display:none;' : ''; ?>">
-            <?php foreach ($sessions as $index => $session): ?>
-                <?php $cover = $session['files'][0]; ?>
-                <div class="grid-item" onclick="openSession(<?php echo $index; ?>)">
-                    <?php if (in_array($cover['ext'], ['mp4', 'mov', 'webm'])): ?>
-                        <video src="<?php echo $cover['path']; ?>" muted loop autoplay playsinline></video>
-                        <div class="play-icon">▶</div>
-                    <?php else: ?>
-                        <img src="<?php echo $cover['path']; ?>" alt="Photobooth Session Cover" loading="lazy">
-                    <?php endif; ?>
+                    <div class="single-showcase-media" onclick="openSession(0)" style="cursor:pointer;">
+                        <?php $single_cover = $single_sess['files'][0]; ?>
+                        <?php if (in_array($single_cover['ext'], ['mp4', 'mov', 'webm'])): ?>
+                            <video src="<?php echo $single_cover['path']; ?>" controls loop playsinline></video>
+                        <?php else: ?>
+                            <img src="<?php echo $single_cover['path']; ?>" alt="Foto Photobooth Anda">
+                        <?php endif; ?>
+                    </div>
 
-                    <div class="session-badge">
-                        <?php echo count($session['files']); ?> Media
+                    <div class="single-actions-wrap">
+                        <button type="button" class="btn-download" onclick="openSession(0)" style="width:100%; max-width:320px;">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                            <span>Buka & Simpan File (<?php echo count($single_sess['files']); ?> Media)</span>
+                        </button>
+                        <p style="font-size:12px; color:#64748b; margin-top:6px;">
+                            🔒 Kerahasiaan terjaga: QR ini khusus menampilkan file sesi foto Anda.
+                        </p>
                     </div>
                 </div>
-            <?php endforeach; ?>
-        </div>
+            </div>
+        <?php else: ?>
+            <div id="emptyState" class="empty-state" style="<?php echo empty($sessions) ? '' : 'display:none;'; ?>">
+                <p>Belum ada foto yang tersedia untuk acara ini.</p>
+            </div>
+
+            <div id="masonryGrid" class="masonry-grid" style="<?php echo empty($sessions) ? 'display:none;' : ''; ?>">
+                <?php foreach ($sessions as $index => $session): ?>
+                    <?php $cover = $session['files'][0]; ?>
+                    <div class="grid-item" onclick="openSession(<?php echo $index; ?>)">
+                        <?php if (!empty($session['is_pinned'])): ?>
+                            <div class="pin-badge">
+                                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+                                <span>FAVORIT PENGANTIN</span>
+                            </div>
+                        <?php endif; ?>
+
+                        <?php if (in_array($cover['ext'], ['mp4', 'mov', 'webm'])): ?>
+                            <video src="<?php echo $cover['path']; ?>" muted loop autoplay playsinline></video>
+                            <div class="play-icon">▶</div>
+                        <?php else: ?>
+                            <img src="<?php echo $cover['path']; ?>" alt="Photobooth Session Cover" loading="lazy">
+                        <?php endif; ?>
+
+                        <div class="session-badge">
+                            <?php echo count($session['files']); ?> Media
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+        <?php endif; ?>
     </main>
 
     <!-- Modal / Lightbox Multi-file per Sesi -->
@@ -474,6 +631,14 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
 
             <div class="modal-actions">
                 <div class="slide-dots" id="slideDots"></div>
+
+                <?php if ($is_vip_mode || $is_admin_or_op): ?>
+                <button type="button" id="btnPinFavorite" class="btn-pin-favorite" onclick="togglePinCurrentSession(event)">
+                    <span id="pinBtnIcon">⭐</span>
+                    <span id="pinBtnText">Jadikan Favorit Pengantin</span>
+                </button>
+                <?php endif; ?>
+
                 <button type="button" id="downloadBtn" class="btn-download" onclick="handleMediaDownload(event)">
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                     <span id="downloadBtnText">Download File Ini</span>
@@ -623,6 +788,36 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
             }
         }
 
+        function renderGridHtml() {
+            const grid = document.getElementById('masonryGrid');
+            const empty = document.getElementById('emptyState');
+            if (!grid) return;
+            if (gallerySessions.length === 0) {
+                grid.style.display = 'none';
+                if (empty) empty.style.display = 'block';
+            } else {
+                if (empty) empty.style.display = 'none';
+                grid.style.display = 'grid';
+                grid.innerHTML = gallerySessions.map((session, idx) => {
+                    const cover = session.files[0];
+                    const isVid = ['mp4', 'mov', 'webm'].includes(cover.ext);
+                    const pinTag = session.is_pinned
+                        ? `<div class="pin-badge"><svg viewBox="0 0 24 24" fill="currentColor" style="width:13px;height:13px;"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg><span>FAVORIT PENGANTIN</span></div>`
+                        : '';
+                    const mediaTag = isVid
+                        ? `<video src="${cover.path}" muted loop autoplay playsinline></video><div class="play-icon">▶</div>`
+                        : `<img src="${cover.path}" alt="Photobooth Session Cover" loading="lazy">`;
+                    return `
+                        <div class="grid-item" onclick="openSession(${idx})">
+                            ${pinTag}
+                            ${mediaTag}
+                            <div class="session-badge">${session.files.length} Media</div>
+                        </div>
+                    `;
+                }).join('');
+            }
+        }
+
         // Auto-Sync Real-time setiap 8 detik: otomatis memunculkan foto baru atau menyembunyikan foto yang di-hide Admin tanpa refresh
         setInterval(async () => {
             try {
@@ -636,28 +831,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
                 if (JSON.stringify(data.sessions) !== JSON.stringify(gallerySessions)) {
                     totalFilesCount = data.total_files;
                     gallerySessions = data.sessions;
-                    const grid = document.getElementById('masonryGrid');
-                    const empty = document.getElementById('emptyState');
-                    if (gallerySessions.length === 0) {
-                        grid.style.display = 'none';
-                        empty.style.display = 'block';
-                    } else {
-                        empty.style.display = 'none';
-                        grid.style.display = 'grid';
-                        grid.innerHTML = gallerySessions.map((session, idx) => {
-                            const cover = session.files[0];
-                            const isVid = ['mp4', 'mov', 'webm'].includes(cover.ext);
-                            const mediaTag = isVid
-                                ? `<video src="${cover.path}" muted loop autoplay playsinline></video><div class="play-icon">▶</div>`
-                                : `<img src="${cover.path}" alt="Photobooth Session Cover" loading="lazy">`;
-                            return `
-                                <div class="grid-item" onclick="openSession(${idx})">
-                                    ${mediaTag}
-                                    <div class="session-badge">${session.files.length} Media</div>
-                                </div>
-                            `;
-                        }).join('');
-                    }
+                    renderGridHtml();
                 }
             } catch (e) {}
         }, 8000);

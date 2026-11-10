@@ -71,10 +71,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
     }
 
     $enable_visual_search = isset($_POST['enable_visual_search']) ? 1 : 0;
+    $keterangan = trim($_POST['keterangan'] ?? '');
+    $lock_after_event = isset($_POST['lock_after_event']) ? 1 : 0;
 
     try {
-        $stmt = $pdo->prepare("INSERT INTO clients (nama_client, slug, lokasi, tanggal_event, jam_mulai, jam_selesai, qr_code_path, folder_foto_path, enable_visual_search) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-        $stmt->execute([$nama_client, $slug, $lokasi, $tanggal_event, $jam_mulai, $jam_selesai, 'uploads/qrcodes/'.$qr_filename, $link_galeri, $enable_visual_search]);
+        $stmt = $pdo->prepare("INSERT INTO clients (nama_client, slug, lokasi, keterangan, tanggal_event, jam_mulai, jam_selesai, qr_code_path, folder_foto_path, enable_visual_search, lock_after_event) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        $stmt->execute([$nama_client, $slug, $lokasi, $keterangan, $tanggal_event, $jam_mulai, $jam_selesai, 'uploads/qrcodes/'.$qr_filename, $link_galeri, $enable_visual_search, $lock_after_event]);
     } catch (Exception $e) {
         $stmt = $pdo->prepare("INSERT INTO clients (nama_client, slug, lokasi, tanggal_event, jam_mulai, jam_selesai, qr_code_path, folder_foto_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
         $stmt->execute([$nama_client, $slug, $lokasi, $tanggal_event, $jam_mulai, $jam_selesai, 'uploads/qrcodes/'.$qr_filename, $link_galeri]);
@@ -272,10 +274,16 @@ function renderClientRow($c, $base_url, $is_pending_section = false) {
                 <?php else: ?>
                     <div class="text-slate-600 flex items-start gap-1 leading-snug">
                         <span class="flex-shrink-0">📍</span>
-                        <span><?= nl2br(htmlspecialchars($c['lokasi'])) ?></span>
+                        <span class="whitespace-pre-line"><?= nl2br(htmlspecialchars($c['lokasi'])) ?></span>
                     </div>
                 <?php endif; ?>
             </div>
+            <?php if (!empty(trim($c['keterangan'] ?? ''))): ?>
+                <div class="text-[11px] text-slate-500 flex items-start gap-1 leading-snug bg-slate-50 p-1.5 rounded border border-slate-100 mt-1">
+                    <span class="flex-shrink-0">📝</span>
+                    <span class="whitespace-pre-line"><?= nl2br(htmlspecialchars(trim($c['keterangan']))) ?></span>
+                </div>
+            <?php endif; ?>
         </div>
 
         <div class="flex items-center gap-1.5 flex-wrap">
@@ -439,6 +447,10 @@ function renderClientRow($c, $base_url, $is_pending_section = false) {
                     <textarea name="lokasi" placeholder="Baris 1: Nama Gedung&#10;Baris 2: Nama Kota" required class="mt-1 w-full px-3 py-2 border rounded-md" rows="2"></textarea>
                 </div>
                 <div>
+                    <label class="block text-sm font-medium text-gray-700">Keterangan / Catatan Tambahan <span class="text-xs text-gray-400 font-normal">(Muncul di bawah lokasi)</span></label>
+                    <textarea name="keterangan" placeholder="Contoh: Shift A: 10.00 - 13.00 WIB&#10;Catatan khusus untuk tamu..." class="mt-1 w-full px-3 py-2 border rounded-md" rows="2"></textarea>
+                </div>
+                <div>
                     <label class="block text-sm font-medium text-gray-700">Tujuan Galeri (Kosongkan untuk Portal Gallery LumaBooth)</label>
                     <input type="text" name="folder_foto_path" placeholder="Kosongkan untuk Portal Gallery Website ini, atau isi URL eksternal" class="mt-1 w-full px-3 py-2 border rounded-md">
                     <p class="text-xs text-emerald-700 mt-1 font-medium">
@@ -460,14 +472,26 @@ function renderClientRow($c, $base_url, $is_pending_section = false) {
                     <label class="block text-sm font-medium text-gray-700">Jam Selesai</label>
                     <input type="time" name="jam_selesai" required class="mt-1 w-full px-3 py-2 border rounded-md">
                 </div>
-                <div class="md:col-span-2 p-3 bg-purple-50/70 border border-purple-200 rounded-lg">
-                    <label class="flex items-center gap-2.5 cursor-pointer">
-                        <input type="checkbox" name="enable_visual_search" value="1" checked class="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded">
-                        <div>
-                            <span class="text-xs font-bold text-purple-900">📸 Aktifkan Fitur Cari Foto dari Hasil Cetak (Visual Search)</span>
-                            <span class="block text-[11px] text-purple-700">Tamu dapat memfoto kertas cetakan untuk mencari softfile aslinya secara otomatis. Dapat diaktifkan / dinonaktifkan kapan saja.</span>
-                        </div>
-                    </label>
+                <div class="md:col-span-2 space-y-2">
+                    <div class="p-3 bg-purple-50/70 border border-purple-200 rounded-lg">
+                        <label class="flex items-center gap-2.5 cursor-pointer">
+                            <input type="checkbox" name="enable_visual_search" value="1" checked class="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded">
+                            <div>
+                                <span class="text-xs font-bold text-purple-900">📸 Aktifkan Fitur Cari Foto dari Hasil Cetak (Visual Search)</span>
+                                <span class="block text-[11px] text-purple-700">Tamu dapat memfoto kertas cetakan untuk mencari softfile aslinya secara otomatis. Dapat diaktifkan / dinonaktifkan kapan saja.</span>
+                            </div>
+                        </label>
+                    </div>
+
+                    <div class="p-3 bg-amber-50/70 border border-amber-200 rounded-lg">
+                        <label class="flex items-center gap-2.5 cursor-pointer">
+                            <input type="checkbox" name="lock_after_event" value="1" checked class="h-4 w-4 text-amber-600 focus:ring-amber-500 border-gray-300 rounded">
+                            <div>
+                                <span class="text-xs font-bold text-amber-900">🔒 Kunci Galeri Otomatis Setelah Jam Acara Selesai (Privasi Tamu)</span>
+                                <span class="block text-[11px] text-amber-700">Sesuai jam_selesai acara. Tamu tidak dapat melihat galeri lagi & diarahkan menghubungi admin via WA untuk request foto. (Pengantin via link VIP tetap bisa akses).</span>
+                            </div>
+                        </label>
+                    </div>
                 </div>
                 <div class="md:col-span-2">
                     <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 font-semibold">Simpan & Generate QR</button>
