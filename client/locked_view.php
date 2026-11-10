@@ -277,7 +277,7 @@ if (!empty($db_client['tanggal_event']) && $db_client['tanggal_event'] !== '0000
 <body>
 
     <header class="header-logo">
-        <a href="<?php echo htmlspecialchars($app_base_url); ?>/">
+        <a href="https://www.yuhu.co.id">
             <img src="https://qr.yuhu.co.id/client/logo.png" onerror="this.src='logo.png'" alt="YUHU PhotoBooth Logo">
         </a>
     </header>
@@ -345,7 +345,7 @@ if (!empty($db_client['tanggal_event']) && $db_client['tanggal_event'] !== '0000
             </a>
             <?php endif; ?>
 
-            <a href="<?php echo htmlspecialchars($app_base_url); ?>/" class="btn-home">
+            <a href="https://www.yuhu.co.id" class="btn-home">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
                 <span>Kembali ke Beranda</span>
             </a>

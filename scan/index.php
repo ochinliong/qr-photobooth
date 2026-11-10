@@ -19,7 +19,7 @@ $app_base_url = rtrim($base_url ?? 'https://files.yuhu.co.id', '/');
     <div class="scan-container">
         <!-- Header -->
         <header class="scan-header">
-            <a href="<?= htmlspecialchars($app_base_url) ?>" class="scan-logo-link">
+            <a href="https://www.yuhu.co.id" class="scan-logo-link">
                 <img src="logo-white.png?v=<?php echo @filemtime(__DIR__ . '/logo-white.png') ?: '1'; ?>" alt="YUHU Photobooth" class="scan-logo" onerror="this.onerror=null; this.src='../client/logo.png'; this.classList.add('filter-white');">
             </a>
             <div class="scan-pill-badge">
@@ -167,7 +167,7 @@ $app_base_url = rtrim($base_url ?? 'https://files.yuhu.co.id', '/');
 
         <!-- Footer -->
         <footer class="scan-footer">
-            <p>&copy; <?= date('Y') ?> <a href="<?= htmlspecialchars($app_base_url) ?>">YUHU Photobooth</a>. Hak Cipta Dilindungi.</p>
+            <p>&copy; <?= date('Y') ?> <a href="https://www.yuhu.co.id" target="_blank">YUHU Photobooth</a>. Hak Cipta Dilindungi.</p>
         </footer>
     </div>
 

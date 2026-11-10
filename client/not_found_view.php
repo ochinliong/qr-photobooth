@@ -279,7 +279,7 @@ $display_requested_url = preg_replace('#^https?://#i', '', $current_full_url);
 <body>
 
     <header class="header-logo">
-        <a href="<?php echo htmlspecialchars($app_base_url); ?>/">
+        <a href="https://www.yuhu.co.id">
             <img src="https://qr.yuhu.co.id/client/logo.png" onerror="this.src='logo.png'" alt="YUHU PhotoBooth Logo">
         </a>
     </header>
@@ -343,7 +343,7 @@ $display_requested_url = preg_replace('#^https?://#i', '', $current_full_url);
                 <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
                 <span>Cari Foto dari Hasil Cetak</span>
             </a>
-            <a href="<?php echo htmlspecialchars($app_base_url); ?>/" class="btn-action-secondary">
+            <a href="https://www.yuhu.co.id" class="btn-action-secondary">
                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
                 <span>Kembali ke Beranda</span>
             </a>

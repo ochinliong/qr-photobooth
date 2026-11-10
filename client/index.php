@@ -11,7 +11,7 @@ $raw_param = $_GET['client'] ?? ($_GET['c'] ?? '');
 $client_name = trim(str_replace(['..', '/', '\\', "\0"], '', $raw_param));
 
 if (empty($client_name)) {
-    header("Location: ../");
+    header("Location: https://www.yuhu.co.id");
     exit;
 }
 
@@ -521,7 +521,9 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
 
     <header class="gallery-header">
         <div class="logo">
-            <img src="https://qr.yuhu.co.id/client/logo.png" onerror="this.src='logo.png'" alt="YUHU PhotoBooth Logo">
+            <a href="https://www.yuhu.co.id" title="YUHU PhotoBooth">
+                <img src="https://qr.yuhu.co.id/client/logo.png" onerror="this.src='logo.png'" alt="YUHU PhotoBooth Logo">
+            </a>
         </div>
         <div class="event-info">
             <h1><?php echo htmlspecialchars($display_title); ?></h1>

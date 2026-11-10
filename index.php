@@ -96,7 +96,9 @@ if (isset($_GET['check_state'])) {
     <div class="flex-grow flex flex-col items-center justify-center p-4">
         <!-- Logo Brand -->
         <div class="mb-6 md:mb-8 flex flex-col items-center justify-center text-center w-full">
-            <img src="https://qr.yuhu.co.id/client/logo.png" alt="Yuhu Logo" class="h-16 md:h-20 w-auto drop-shadow-sm transition-transform duration-300 hover:scale-105">
+            <a href="https://www.yuhu.co.id" title="YUHU Photobooth">
+                <img src="https://qr.yuhu.co.id/client/logo.png" alt="Yuhu Logo" class="h-16 md:h-20 w-auto drop-shadow-sm transition-transform duration-300 hover:scale-105">
+            </a>
         </div>
 
         <div id="main-portal-view" class="w-full flex flex-col items-center">

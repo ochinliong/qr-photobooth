@@ -134,6 +134,6 @@ if (!empty($custom_slug)) {
 }
 
 // Fallback jika memang tidak ada slug sama sekali
-header("Location: " . $base_url);
+header("Location: https://www.yuhu.co.id");
 exit;
 ?>
