@@ -827,19 +827,58 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
         // Auto-Sync Real-time setiap 8 detik: otomatis memunculkan foto baru atau menyembunyikan foto yang di-hide Admin tanpa refresh
         setInterval(async () => {
             try {
-                const res = await fetch(`index.php?client=<?php echo rawurlencode($resolved_folder); ?>&ajax=1`);
+                // Gunakan URL absolut ke /client/index.php dengan menyertakan seluruh status parameter (client, vip, single_file)
+                const syncUrl = new URL('/client/index.php', window.location.origin);
+                syncUrl.searchParams.set('client', <?php echo json_encode($resolved_folder); ?>);
+                syncUrl.searchParams.set('ajax', '1');
+                <?php if ($is_vip_mode): ?>
+                syncUrl.searchParams.set('vip', '1');
+                <?php endif; ?>
+                <?php if (!empty($is_single_view_param)): ?>
+                syncUrl.searchParams.set('single_file', <?php echo json_encode($is_single_view_param); ?>);
+                <?php endif; ?>
+
+                const res = await fetch(syncUrl.toString(), {
+                    cache: 'no-store'
+                });
+                if (!res.ok) return;
+
                 const data = await res.json();
+                // Validasi ketat: jangan pernah memproses data jika terjadi error atau format sesi tidak valid
+                if (!data || data.error || !Array.isArray(data.sessions)) {
+                    return;
+                }
+
+                // Pengaman: Jangan pernah mengosongkan galeri jika sebelumnya sudah ada foto yang tampil
+                if (data.sessions.length === 0 && Array.isArray(gallerySessions) && gallerySessions.length > 0) {
+                    return;
+                }
+
                 const vipFilesEl = document.getElementById('vipTotalFiles');
                 const vipMbEl = document.getElementById('vipTotalMb');
                 if (vipFilesEl && typeof data.zip_total_files !== 'undefined') vipFilesEl.innerText = data.zip_total_files;
                 if (vipMbEl && typeof data.zip_total_mb !== 'undefined') vipMbEl.innerText = data.zip_total_mb + ' MB';
 
+                // Update galeri hanya jika ada penambahan/perubahan foto sesi nyata
                 if (JSON.stringify(data.sessions) !== JSON.stringify(gallerySessions)) {
-                    totalFilesCount = data.total_files;
+                    const currentOpenId = (modal && modal.classList.contains('active') && gallerySessions[currentSessionIndex])
+                        ? gallerySessions[currentSessionIndex].id
+                        : null;
+
+                    totalFilesCount = data.total_files || data.sessions.length;
                     gallerySessions = data.sessions;
+
+                    // Sinkronkan indeks sesi yang sedang dibuka jika ada foto baru masuk di urutan teratas
+                    if (currentOpenId) {
+                        const newIdx = gallerySessions.findIndex(s => s.id === currentOpenId);
+                        if (newIdx !== -1) currentSessionIndex = newIdx;
+                    }
+
                     renderGridHtml();
                 }
-            } catch (e) {}
+            } catch (e) {
+                // Abaikan kesalahan koneksi sesaat agar galeri tetap stabil
+            }
         }, 8000);
     </script>
 </body>
