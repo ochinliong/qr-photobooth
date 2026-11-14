@@ -100,9 +100,12 @@ if (!is_dir($event_dir)) {
 
 // Bersihkan file dummy pengujian jika ada
 @unlink($base_dir . 'The_Wedding_of_Cipung_Cipang/Prints/test_1900kb.jpg');
+@unlink($base_dir . 'The_Wedding_of_Arya_Ais/Prints/test_arya.jpg');
 @unlink($base_dir . 'Test_Diagnose_Event/Prints/test_ping.jpg');
 @rmdir($base_dir . 'Test_Diagnose_Event/Prints');
 @rmdir($base_dir . 'Test_Diagnose_Event');
+@rmdir($base_dir . 'TestDiagnose2026/Prints');
+@rmdir($base_dir . 'TestDiagnose2026');
 
 // =========================================================================
 // AUTO-SYNC DENGAN DATABASE PORTAL QR (photobooth_db -> tabel clients)
