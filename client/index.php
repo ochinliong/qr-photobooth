@@ -19,14 +19,20 @@ if (empty($client_name)) {
 $db_client = null;
 $req_clean = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $client_name));
 try {
-    $stmt = $pdo->query("SELECT * FROM clients ORDER BY id DESC");
-    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
-        $c_name = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $row['nama_client']));
-        $c_slug = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $row['slug']));
-        $c_folder = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', extractLumaboothFolderFromUrl($row['folder_foto_path'] ?? '')));
-        if ($req_clean !== '' && ($c_name === $req_clean || $c_slug === $req_clean || ($c_folder !== '' && $c_folder === $req_clean))) {
-            $db_client = $row;
-            break;
+    $stmt = $pdo->prepare("SELECT * FROM clients WHERE slug = ? OR nama_client = ? LIMIT 1");
+    $stmt->execute([$client_name, $client_name]);
+    $db_client = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+
+    if (!$db_client) {
+        $stmt_all = $pdo->query("SELECT * FROM clients ORDER BY id DESC LIMIT 100");
+        foreach ($stmt_all->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $c_name = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $row['nama_client']));
+            $c_slug = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $row['slug']));
+            $c_folder = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', extractLumaboothFolderFromUrl($row['folder_foto_path'] ?? '')));
+            if ($req_clean !== '' && ($c_name === $req_clean || $c_slug === $req_clean || ($c_folder !== '' && $c_folder === $req_clean))) {
+                $db_client = $row;
+                break;
+            }
         }
     }
 } catch (Exception $e) {}
@@ -241,6 +247,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
     $cfg['pinned_sessions'] = array_values(array_unique($cur_pinned));
     @file_put_contents($config_path, json_encode($cfg, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+    @unlink($target_dir . '/.cache_sessions.json');
+    @touch($target_dir . '/.last_updated');
 
     echo json_encode([
         'success' => true,
@@ -251,100 +259,145 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     exit;
 }
 
-// Membaca file rekursif dari photos/{EventName}/{Prints,Animated,Singles,...}
+// Cache Cepat Galeri: Jika belum ada perubahan file di disk, gunakan cache JSON instan (<0.1ms)
+$cache_file = $target_dir . '/.cache_sessions.json';
+$last_upd_file = $target_dir . '/.last_updated';
+$last_upd_time = file_exists($last_upd_file) ? (int)@filemtime($last_upd_file) : 0;
+$cfg_time = file_exists($config_path) ? (int)@filemtime($config_path) : 0;
+if ($cfg_time > $last_upd_time) $last_upd_time = $cfg_time;
+$use_cache = false;
 $files_data = [];
 $zip_total_files = 0;
 $zip_total_bytes = 0;
-if (is_dir($target_dir)) {
-    $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($target_dir));
-    foreach ($iterator as $file) {
-        if ($file->isFile()) {
-            $fname_only = $file->getFilename();
-            if (
-                strpos($fname_only, '.part_') !== false ||
-                strpos($fname_only, '.cache_') === 0 ||
-                strpos($fname_only, '.tmp_zip_') === 0 ||
-                $fname_only === 'config.json' ||
-                $fname_only === '.deleted_by_admin' ||
-                substr($fname_only, -5) === '.lock'
-            ) {
-                continue;
-            }
+$sessions = [];
 
-            $ext = strtolower($file->getExtension());
-            if (in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'mov', 'webm'])) {
-                $path = str_replace('\\', '/', $file->getPathname());
-                $target_norm = str_replace('\\', '/', $target_dir);
-                $rel_path = ltrim( substr($path, strlen($target_norm)), '/' );
+if (file_exists($cache_file) && @filemtime($cache_file) >= $last_upd_time && empty($is_single_view_param)) {
+    $cached = @json_decode(@file_get_contents($cache_file), true);
+    if ($cached && isset($cached['sessions']) && is_array($cached['sessions'])) {
+        $sessions = $cached['sessions'];
+        $files_data = $cached['files_data'] ?? [];
+        $zip_total_files = $cached['zip_total_files'] ?? count($files_data);
+        $zip_total_mb = $cached['zip_total_mb'] ?? 0;
+        $use_cache = true;
+    }
+}
 
-                $parts = explode('/', $rel_path);
-                $parent_folder = count($parts) > 1 ? $parts[0] : '';
-
-                // Aturan khusus dslrBooth / LumaBooth:
-                // 1. Abaikan folder 'thumb', 'settings', dan 'templates'
-                $rel_path_lower = strtolower($rel_path);
-                if (strpos($rel_path_lower, 'thumb') !== false ||
-                    strpos($rel_path_lower, 'settings') !== false ||
-                    strpos($rel_path_lower, 'template') !== false) {
+if (!$use_cache) {
+    // Membaca file rekursif dari photos/{EventName}/{Prints,Animated,Singles,...}
+    clearstatcache(true);
+    if (is_dir($target_dir)) {
+        $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($target_dir));
+        foreach ($iterator as $file) {
+            if ($file->isFile()) {
+                $fname_only = $file->getFilename();
+                if (
+                    strpos($fname_only, '.part_') !== false ||
+                    strpos($fname_only, '.cache_') === 0 ||
+                    strpos($fname_only, '.tmp_zip_') === 0 ||
+                    $fname_only === 'config.json' ||
+                    $fname_only === '.deleted_by_admin' ||
+                    substr($fname_only, -5) === '.lock'
+                ) {
                     continue;
                 }
 
-                // 2. Di folder Animated, abaikan file JPG thumbnail pendamping MP4
-                if (strtolower($parent_folder) === 'animated' && in_array($ext, ['jpg', 'jpeg', 'png'])) {
-                    continue;
-                }
+                $ext = strtolower($file->getExtension());
+                if (in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'mov', 'webm'])) {
+                    $path = str_replace('\\', '/', $file->getPathname());
+                    $target_norm = str_replace('\\', '/', $target_dir);
+                    $rel_path = ltrim( substr($path, strlen($target_norm)), '/' );
 
-                // 3. Sembunyikan file jika masuk daftar hidden_files
-                if (in_array($rel_path, $hidden_files)) {
-                    continue;
-                }
+                    $parts = explode('/', $rel_path);
+                    $parent_folder = count($parts) > 1 ? $parts[0] : '';
 
-                $f_size = @$file->getSize() ?: 0;
-                if ($f_size > 0) {
-                    $zip_total_files++;
-                    $zip_total_bytes += $f_size;
-                }
+                    // Aturan khusus dslrBooth / LumaBooth:
+                    // 1. Abaikan folder 'thumb', 'settings', dan 'templates'
+                    $rel_path_lower = strtolower($rel_path);
+                    if (strpos($rel_path_lower, 'thumb') !== false ||
+                        strpos($rel_path_lower, 'settings') !== false ||
+                        strpos($rel_path_lower, 'template') !== false) {
+                        continue;
+                    }
 
-                if ($parent_folder === '' || in_array($parent_folder, $visible_folders)) {
-                    $encoded_client = rawurlencode($resolved_folder);
-                    $encoded_rel_path = implode('/', array_map('rawurlencode', explode('/', $rel_path)));
-                    $files_data[] = [
-                        'file' => $rel_path,
-                        'path' => 'photos/' . $encoded_client . '/' . $encoded_rel_path,
-                        'ext'  => $ext,
-                        'time' => $file->getMTime()
-                    ];
+                    // 2. Di folder Animated, abaikan file JPG thumbnail pendamping MP4
+                    if (strtolower($parent_folder) === 'animated' && in_array($ext, ['jpg', 'jpeg', 'png'])) {
+                        continue;
+                    }
+
+                    // 3. Sembunyikan file jika masuk daftar hidden_files
+                    if (in_array($rel_path, $hidden_files)) {
+                        continue;
+                    }
+
+                    $f_size = @$file->getSize() ?: 0;
+                    if ($f_size > 0) {
+                        $zip_total_files++;
+                        $zip_total_bytes += $f_size;
+                    }
+
+                    if ($parent_folder === '' || in_array($parent_folder, $visible_folders)) {
+                        $encoded_client = rawurlencode($resolved_folder);
+                        $encoded_rel_path = implode('/', array_map('rawurlencode', explode('/', $rel_path)));
+                        $files_data[] = [
+                            'file' => $rel_path,
+                            'path' => 'photos/' . $encoded_client . '/' . $encoded_rel_path,
+                            'ext'  => $ext,
+                            'time' => $file->getMTime()
+                        ];
+                    }
                 }
             }
         }
     }
-}
-$zip_total_mb = round($zip_total_bytes / (1024 * 1024), 1);
+    $zip_total_mb = round($zip_total_bytes / (1024 * 1024), 1);
 
-// =========================================================================
-// ALGORITMA GROUPING PER SESI LUMABOOTH (Anchor-Based Proximity <= 45 detik)
-// Mengelompokkan Prints + Animated (MP4/GIF) + Singles dari 1 sesi foto tamu!
-// =========================================================================
-$sessions_map = [];
-$anchor_timestamps = [];
+    // =========================================================================
+    // ALGORITMA GROUPING PER SESI LUMABOOTH (Anchor-Based Proximity <= 45 detik)
+    // Mengelompokkan Prints + Animated (MP4/GIF) + Singles dari 1 sesi foto tamu!
+    // =========================================================================
+    $sessions_map = [];
+    $anchor_timestamps = [];
 
-$extractTs = function($fname, $fallback_time) {
-    if (preg_match('/(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})/', $fname, $m)) {
-        return strtotime("{$m[1]}-{$m[2]}-{$m[3]} {$m[4]}:{$m[5]}:{$m[6]}");
+    $extractTs = function($fname, $fallback_time) {
+        if (preg_match('/(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})/', $fname, $m)) {
+            return strtotime("{$m[1]}-{$m[2]}-{$m[3]} {$m[4]}:{$m[5]}:{$m[6]}");
+        }
+        return $fallback_time;
+    };
+
+    // Tahap 1: Daftarkan semua Anchor Sesi terlebih dahulu (dari Prints / Animated / Videos / GIF)
+    foreach ($files_data as $data) {
+        $path_lower = strtolower($data['file']);
+        $filename = basename($data['file']);
+        $ext = $data['ext'];
+
+        if (strpos($path_lower, 'prints/') !== false ||
+            strpos($path_lower, 'animated/') !== false ||
+            strpos($path_lower, 'videos/') !== false ||
+            in_array($ext, ['mp4', 'gif', 'mov', 'webm'])) {
+
+            if (preg_match('/^(\d{8}_\d{6}_\d{3})/', $filename, $matches)) {
+                $base_id = $matches[1];
+            } else {
+                $base_id = preg_replace('/(_mp4|_gif|\.[a-zA-Z0-9]+)$/i', '', $filename);
+            }
+
+            if (!isset($sessions_map[$base_id])) {
+                $ts = $extractTs($filename, $data['time']);
+                $sessions_map[$base_id] = [
+                    'id' => 'session_' . $base_id,
+                    'time' => $ts,
+                    'files' => []
+                ];
+                $anchor_timestamps[$base_id] = $ts;
+            }
+        }
     }
-    return $fallback_time;
-};
 
-// Tahap 1: Daftarkan semua Anchor Sesi terlebih dahulu (dari Prints / Animated / Videos / GIF)
-foreach ($files_data as $data) {
-    $path_lower = strtolower($data['file']);
-    $filename = basename($data['file']);
-    $ext = $data['ext'];
-
-    if (strpos($path_lower, 'prints/') !== false ||
-        strpos($path_lower, 'animated/') !== false ||
-        strpos($path_lower, 'videos/') !== false ||
-        in_array($ext, ['mp4', 'gif', 'mov', 'webm'])) {
+    // Tahap 2: Masukkan seluruh file (termasuk Singles & Originals) ke Sesi Anchor terdekat
+    foreach ($files_data as $data) {
+        $filename = basename($data['file']);
+        $ts = $extractTs($filename, $data['time']);
 
         if (preg_match('/^(\d{8}_\d{6}_\d{3})/', $filename, $matches)) {
             $base_id = $matches[1];
@@ -352,141 +405,134 @@ foreach ($files_data as $data) {
             $base_id = preg_replace('/(_mp4|_gif|\.[a-zA-Z0-9]+)$/i', '', $filename);
         }
 
-        if (!isset($sessions_map[$base_id])) {
-            $ts = $extractTs($filename, $data['time']);
-            $sessions_map[$base_id] = [
-                'id' => 'session_' . $base_id,
-                'time' => $ts,
-                'files' => []
-            ];
-            $anchor_timestamps[$base_id] = $ts;
-        }
-    }
-}
-
-// Tahap 2: Masukkan seluruh file (termasuk Singles & Originals) ke Sesi Anchor terdekat
-foreach ($files_data as $data) {
-    $filename = basename($data['file']);
-    $ts = $extractTs($filename, $data['time']);
-
-    if (preg_match('/^(\d{8}_\d{6}_\d{3})/', $filename, $matches)) {
-        $base_id = $matches[1];
-    } else {
-        $base_id = preg_replace('/(_mp4|_gif|\.[a-zA-Z0-9]+)$/i', '', $filename);
-    }
-
-    if (isset($sessions_map[$base_id])) {
-        $sessions_map[$base_id]['files'][] = $data;
-        if ($ts > $sessions_map[$base_id]['time']) {
-            $sessions_map[$base_id]['time'] = $ts;
-        }
-        continue;
-    }
-
-    $best_anchor_id = null;
-    $min_diff = 999999;
-    foreach ($anchor_timestamps as $aid => $ats) {
-        $diff = abs($ats - $ts);
-        if ($diff <= 45 && $diff < $min_diff) {
-            $min_diff = $diff;
-            $best_anchor_id = $aid;
-        }
-    }
-
-    if ($best_anchor_id !== null) {
-        $sessions_map[$best_anchor_id]['files'][] = $data;
-        if ($ts > $sessions_map[$best_anchor_id]['time']) {
-            $sessions_map[$best_anchor_id]['time'] = $ts;
-        }
-    } else {
-        if (!isset($sessions_map[$base_id])) {
-            $sessions_map[$base_id] = [
-                'id' => 'session_' . $base_id,
-                'time' => $ts,
-                'files' => [$data]
-            ];
-        } else {
+        if (isset($sessions_map[$base_id])) {
             $sessions_map[$base_id]['files'][] = $data;
             if ($ts > $sessions_map[$base_id]['time']) {
                 $sessions_map[$base_id]['time'] = $ts;
             }
+            continue;
         }
-    }
-}
 
-// Tandai status is_pinned pada setiap sesi
-foreach ($sessions_map as &$session_ref) {
-    $session_ref['is_pinned'] = in_array($session_ref['id'], $pinned_sessions, true);
-}
-unset($session_ref);
+        $best_anchor_id = null;
+        $min_diff = 999999;
+        foreach ($anchor_timestamps as $aid => $ats) {
+            $diff = abs($ats - $ts);
+            if ($diff <= 45 && $diff < $min_diff) {
+                $min_diff = $diff;
+                $best_anchor_id = $aid;
+            }
+        }
 
-// Urutkan sesi: Sesi Favorit Pengantin (Pinned) selalu paling atas, lalu urut waktu terbaru
-usort($sessions_map, function($a, $b) {
-    $a_pin = !empty($a['is_pinned']) ? 1 : 0;
-    $b_pin = !empty($b['is_pinned']) ? 1 : 0;
-    if ($a_pin !== $b_pin) {
-        return $b_pin - $a_pin;
-    }
-    return $b['time'] - $a['time'];
-});
-
-// Mode Tampilan File Tunggal (Khusus jika dibuka via QR Code Operator per-file)
-$is_single_view_active = false;
-$single_view_session = null;
-if (!empty($is_single_view_param)) {
-    $needle_clean = strtolower(basename($is_single_view_param));
-    foreach ($sessions_map as $s_check) {
-        foreach ($s_check['files'] as $f_check) {
-            if (strtolower(basename($f_check['file'])) === $needle_clean || strtolower($f_check['file']) === strtolower($is_single_view_param)) {
-                $single_view_session = $s_check;
-                $is_single_view_active = true;
-                break 2;
+        if ($best_anchor_id !== null) {
+            $sessions_map[$best_anchor_id]['files'][] = $data;
+            if ($ts > $sessions_map[$best_anchor_id]['time']) {
+                $sessions_map[$best_anchor_id]['time'] = $ts;
+            }
+        } else {
+            if (!isset($sessions_map[$base_id])) {
+                $sessions_map[$base_id] = [
+                    'id' => 'session_' . $base_id,
+                    'time' => $ts,
+                    'files' => [$data]
+                ];
+            } else {
+                $sessions_map[$base_id]['files'][] = $data;
+                if ($ts > $sessions_map[$base_id]['time']) {
+                    $sessions_map[$base_id]['time'] = $ts;
+                }
             }
         }
     }
-    if ($is_single_view_active && $single_view_session) {
-        $sessions_map = [$single_view_session['id'] => $single_view_session];
-    }
-}
 
-// Urutkan isi file dalam tiap sesi: 1. Prints (Cover Utama), 2. Video Animated (MP4 Asli), 3. Animasi GIF, 4. Singles
-foreach ($sessions_map as &$session) {
-    // Jika sesi memiliki video MP4/MOV/WebM asli, singkirkan file GIF resolusi rendah agar kualitas tidak pecah
-    $has_hd_video = false;
-    foreach ($session['files'] as $f) {
-        $f_ext = strtolower($f['ext'] ?? '');
-        if (in_array($f_ext, ['mp4', 'mov', 'webm'])) {
-            $has_hd_video = true;
-            break;
+    // Tandai status is_pinned pada setiap sesi
+    foreach ($sessions_map as &$session_ref) {
+        $session_ref['is_pinned'] = in_array($session_ref['id'], $pinned_sessions, true);
+    }
+    unset($session_ref);
+
+    // Urutkan sesi: Sesi Favorit Pengantin (Pinned) selalu paling atas, lalu urut waktu terbaru
+    usort($sessions_map, function($a, $b) {
+        $a_pin = !empty($a['is_pinned']) ? 1 : 0;
+        $b_pin = !empty($b['is_pinned']) ? 1 : 0;
+        if ($a_pin !== $b_pin) {
+            return $b_pin - $a_pin;
+        }
+        return $b['time'] - $a['time'];
+    });
+
+    // Mode Tampilan File Tunggal (Khusus jika dibuka via QR Code Operator per-file)
+    $is_single_view_active = false;
+    $single_view_session = null;
+    if (!empty($is_single_view_param)) {
+        $needle_clean = strtolower(basename($is_single_view_param));
+        foreach ($sessions_map as $s_check) {
+            foreach ($s_check['files'] as $f_check) {
+                if (strtolower(basename($f_check['file'])) === $needle_clean || strtolower($f_check['file']) === strtolower($is_single_view_param)) {
+                    $single_view_session = $s_check;
+                    $is_single_view_active = true;
+                    break 2;
+                }
+            }
+        }
+        if ($is_single_view_active && $single_view_session) {
+            $sessions_map = [$single_view_session['id'] => $single_view_session];
         }
     }
-    if ($has_hd_video) {
-        $session['files'] = array_values(array_filter($session['files'], function($f) {
-            return strtolower($f['ext'] ?? '') !== 'gif';
-        }));
+
+    // Urutkan isi file dalam tiap sesi: 1. Prints (Cover Utama), 2. Video Animated (MP4 Asli), 3. Animasi GIF, 4. Singles
+    foreach ($sessions_map as &$session) {
+        // Jika sesi memiliki video MP4/MOV/WebM asli, singkirkan file GIF resolusi rendah agar kualitas tidak pecah
+        $has_hd_video = false;
+        foreach ($session['files'] as $f) {
+            $f_ext = strtolower($f['ext'] ?? '');
+            if (in_array($f_ext, ['mp4', 'mov', 'webm'])) {
+                $has_hd_video = true;
+                break;
+            }
+        }
+        if ($has_hd_video) {
+            $session['files'] = array_values(array_filter($session['files'], function($f) {
+                return strtolower($f['ext'] ?? '') !== 'gif';
+            }));
+        }
+
+        usort($session['files'], function($a, $b) {
+            $getPriority = function($f) {
+                $path_lower = strtolower($f['file']);
+                $ext = strtolower($f['ext'] ?? '');
+                if (strpos($path_lower, 'prints/') !== false) return 4;
+                if (in_array($ext, ['mp4', 'mov', 'webm'])) return 3; // Video MP4/MOV kualitas asli selalu diutamakan!
+                if ($ext === 'gif' || strpos($path_lower, 'animated/') !== false || strpos($path_lower, 'videos/') !== false) return 2;
+                return 1;
+            };
+            $pA = $getPriority($a);
+            $pB = $getPriority($b);
+            if ($pA !== $pB) return $pB - $pA;
+            return $a['time'] - $b['time'];
+        });
     }
+    unset($session);
 
-    usort($session['files'], function($a, $b) {
-        $getPriority = function($f) {
-            $path_lower = strtolower($f['file']);
-            $ext = strtolower($f['ext'] ?? '');
-            if (strpos($path_lower, 'prints/') !== false) return 4;
-            if (in_array($ext, ['mp4', 'mov', 'webm'])) return 3; // Video MP4/MOV kualitas asli selalu diutamakan!
-            if ($ext === 'gif' || strpos($path_lower, 'animated/') !== false || strpos($path_lower, 'videos/') !== false) return 2;
-            return 1;
-        };
-        $pA = $getPriority($a);
-        $pB = $getPriority($b);
-        if ($pA !== $pB) return $pB - $pA;
-        return $a['time'] - $b['time'];
-    });
+    $sessions = array_values(array_filter($sessions_map, function($s) {
+        return !empty($s['files']);
+    }));
+
+    if (empty($is_single_view_param) && is_dir($target_dir)) {
+        @file_put_contents($cache_file, json_encode([
+            'sessions' => $sessions,
+            'files_data' => $files_data,
+            'zip_total_files' => $zip_total_files,
+            'zip_total_mb' => $zip_total_mb
+        ], JSON_UNESCAPED_SLASHES));
+    }
 }
-unset($session);
-
-$sessions = array_values($sessions_map);
 
 // Jika dipanggil via AJAX untuk live auto-refresh tanpa kedip
 if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
+    header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
+    header("Cache-Control: post-check=0, pre-check=0", false);
+    header("Pragma: no-cache");
+    header("Expires: Wed, 11 Jan 1984 05:00:00 GMT");
     header('Content-Type: application/json; charset=utf-8');
     echo json_encode([
         'session_count' => count($sessions),
@@ -824,13 +870,14 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
             }
         }
 
-        // Auto-Sync Real-time setiap 8 detik: otomatis memunculkan foto baru atau menyembunyikan foto yang di-hide Admin tanpa refresh
+        // Auto-Sync Real-time setiap 4 detik: otomatis memunculkan foto baru atau menyembunyikan foto yang di-hide Admin tanpa refresh
         setInterval(async () => {
             try {
-                // Gunakan URL absolut ke /client/index.php dengan menyertakan seluruh status parameter (client, vip, single_file)
+                // Gunakan URL absolut ke /client/index.php dengan anti-cache query parameter (_t)
                 const syncUrl = new URL('/client/index.php', window.location.origin);
                 syncUrl.searchParams.set('client', <?php echo json_encode($resolved_folder); ?>);
                 syncUrl.searchParams.set('ajax', '1');
+                syncUrl.searchParams.set('_t', Date.now().toString());
                 <?php if ($is_vip_mode): ?>
                 syncUrl.searchParams.set('vip', '1');
                 <?php endif; ?>
@@ -879,7 +926,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
             } catch (e) {
                 // Abaikan kesalahan koneksi sesaat agar galeri tetap stabil
             }
-        }, 8000);
+        }, 4000);
     </script>
 </body>
 </html>

@@ -100,6 +100,9 @@ if (!is_dir($event_dir)) {
 
 // Bersihkan file dummy pengujian jika ada
 @unlink($base_dir . 'The_Wedding_of_Cipung_Cipang/Prints/test_1900kb.jpg');
+@unlink($base_dir . 'Test_Diagnose_Event/Prints/test_ping.jpg');
+@rmdir($base_dir . 'Test_Diagnose_Event/Prints');
+@rmdir($base_dir . 'Test_Diagnose_Event');
 
 // =========================================================================
 // AUTO-SYNC DENGAN DATABASE PORTAL QR (photobooth_db -> tabel clients)
@@ -306,6 +309,11 @@ if (!@rename($temp_path, $target_path)) {
     @copy($temp_path, $target_path);
     @unlink($temp_path);
 }
+
+// Invalidate cache galeri secara seketika agar foto langsung muncul di browser tamu tanpa delay
+$clean_event_dir = rtrim($event_dir, '/\\');
+@unlink($clean_event_dir . '/.cache_sessions.json');
+@touch($clean_event_dir . '/.last_updated');
 
 http_response_code(200);
 echo json_encode([

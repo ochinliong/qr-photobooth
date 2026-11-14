@@ -261,7 +261,8 @@ if (!function_exists('ensureLumaboothEventInDb')) {
                 $ch = curl_init($qr_api);
                 curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
                 curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-                curl_setopt($ch, CURLOPT_TIMEOUT, 4);
+                curl_setopt($ch, CURLOPT_TIMEOUT, 2);
+                curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 1);
                 $img = @curl_exec($ch);
                 if ($img) @file_put_contents($qr_filepath, $img);
                 curl_close($ch);
