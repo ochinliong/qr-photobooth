@@ -163,7 +163,7 @@ IF /I "%~1"=="BG_DAEMON"  GOTO :bg_daemon_entry
 SET "EVENT_TYPE=%~1"
 IF "%EVENT_TYPE%"=="" (
     ECHO =====================================================================
-    ECHO   YUHU PHOTOBOOTH v12 - LUMABOOTH CLOUD AUTO-UPLOADER AKTIF
+    ECHO   YUHU PHOTOBOOTH v12 - LUMABOOTH CLOUD AUTO-UPLOADER ^& RECOVERY
     ECHO =====================================================================
     ECHO   Folder Data LumaBooth : "!DSLRBOOTH_DIR!"
     ECHO   Project Aktif Saat Ini: "!LB_ACTIVE_DIR!"
@@ -172,8 +172,19 @@ IF "%EVENT_TYPE%"=="" (
     ECHO   Filter Media          : Hanya Prints ^& Animated (Singles/Originals DIABAIKAN)
     ECHO =====================================================================
     ECHO.
-    ECHO [*] Memulai sinkronisasi seluruh foto yang sudah ada ^& foto baru...
-    CALL :launch_detached BG_SWEEP "!LB_ACTIVE_DIR!"
+    ECHO [*] Membersihkan proses curl gantung ^& file lock lama...
+    TASKKILL /F /IM curl.exe >nul 2>&1
+    DEL /F /Q "%LOCK_FILE%" "%SWEEP_LOCK%" "%DAEMON_LOCK%" "%BATCH_FILE%" "%QUEUE_FILE%" "%PRIORITY_QUEUE%" "%WORK_DIR%active_priority.txt" "%WORK_DIR%raw_scan.tmp" >nul 2>&1
+    
+    :: Bersihkan sent_history untuk project aktif agar file tertunda dipastikan terupload
+    IF EXIST "%SENT_LOG%" (
+        MOVE /Y "%SENT_LOG%" "%SENT_LOG%.bak" >nul 2>&1
+        TYPE nul > "%SENT_LOG%"
+    )
+    
+    ECHO [*] Memulai sinkronisasi seluruh foto yang tertunda ^& foto baru...
+    CALL :locked_sweep_entry "!LB_ACTIVE_DIR!"
+    CALL :launch_detached WORKER ""
     CALL :launch_detached BG_DAEMON ""
     ECHO [V] Berhasil aktif! Seluruh foto hasil cetak ^& animasi di dalam project
     ECHO     sedang di-upload otomatis di latar belakang sampai 100%% tuntas.
@@ -385,31 +396,30 @@ DEL /F /Q "%RAW_LIST%" >nul 2>&1
 EXIT /B 0
 
 :append_project_files
-IF "%~1"=="" EXIT /B 0
-IF NOT EXIST "%~1" EXIT /B 0
+SET "TARGET_PROJ=%~1"
+IF "!TARGET_PROJ!"=="" EXIT /B 0
+IF NOT EXIST "!TARGET_PROJ!" EXIT /B 0
 
-(
-    IF EXIST "%~1\Prints" (
-        FOR /F "delims=" %%F IN ('DIR "%~1\Prints" /A-D /B /O-D 2^>nul') DO (
-            ECHO %~1\Prints\%%F
-        )
+IF EXIST "!TARGET_PROJ!\Prints" (
+    FOR /F "delims=" %%F IN ('DIR "!TARGET_PROJ!\Prints" /A-D /B /O-D 2^>nul') DO (
+        >> "%RAW_LIST%" ECHO !TARGET_PROJ!\Prints\%%F
     )
-    IF EXIST "%~1\Animated" (
-        FOR /F "delims=" %%F IN ('DIR "%~1\Animated" /A-D /B /O-D 2^>nul') DO (
-            ECHO %~1\Animated\%%F
-        )
+)
+IF EXIST "!TARGET_PROJ!\Animated" (
+    FOR /F "delims=" %%F IN ('DIR "!TARGET_PROJ!\Animated" /A-D /B /O-D 2^>nul') DO (
+        >> "%RAW_LIST%" ECHO !TARGET_PROJ!\Animated\%%F
     )
-    IF EXIST "%~1\Videos" (
-        FOR /F "delims=" %%F IN ('DIR "%~1\Videos" /A-D /B /O-D 2^>nul') DO (
-            ECHO %~1\Videos\%%F
-        )
+)
+IF EXIST "!TARGET_PROJ!\Videos" (
+    FOR /F "delims=" %%F IN ('DIR "!TARGET_PROJ!\Videos" /A-D /B /O-D 2^>nul') DO (
+        >> "%RAW_LIST%" ECHO !TARGET_PROJ!\Videos\%%F
     )
-    IF EXIST "%~1\GIFs" (
-        FOR /F "delims=" %%F IN ('DIR "%~1\GIFs" /A-D /B /O-D 2^>nul') DO (
-            ECHO %~1\GIFs\%%F
-        )
+)
+IF EXIST "!TARGET_PROJ!\GIFs" (
+    FOR /F "delims=" %%F IN ('DIR "!TARGET_PROJ!\GIFs" /A-D /B /O-D 2^>nul') DO (
+        >> "%RAW_LIST%" ECHO !TARGET_PROJ!\GIFs\%%F
     )
-) >> "%RAW_LIST%" 2>nul
+)
 EXIT /B 0
 
 
@@ -549,7 +559,7 @@ IF NOT EXIST "!CURRENT_FILE!" (
 )
 
 :: 1. Kirim ke Server Utama (files.yuhu.co.id)
-"%CURL%" -4 --ssl-no-revoke --http1.1 -H "Expect:" --fail --max-time 300 --connect-timeout 20 -s -k -X POST "!API_URL_PRIMARY!" -F "token=!API_TOKEN!" -F "client_event=!EVENT_NAME!" -F "folder_target=!FOLDER_TARGET!" -F "file=@!STAGE_FILE!" >nul 2>&1
+"%CURL%" -4 --ssl-no-revoke --http1.1 -H "Expect:" --fail --max-time 35 --connect-timeout 10 -s -k -X POST "!API_URL_PRIMARY!" -F "token=!API_TOKEN!" -F "client_event=!EVENT_NAME!" -F "folder_target=!FOLDER_TARGET!" -F "file=@!STAGE_FILE!" >nul 2>&1
 SET "CURL_ERR=!ERRORLEVEL!"
 
 IF "!CURL_ERR!"=="0" (
@@ -563,7 +573,7 @@ IF "!CURL_ERR!"=="0" (
 IF "!CURL_ERR!"=="22" (
     IF "!IS_VIDEO!"=="1" (
         :: Untuk video: Kirim via Raw Binary Stream agar lolos 100% tanpa kompresi sedikitpun!
-        "%CURL%" -4 --ssl-no-revoke --http1.1 -H "Expect:" --fail --max-time 300 --connect-timeout 20 -s -k -X POST "!API_URL_PRIMARY!?token=!API_TOKEN!" -H "X-Client-Event: !EVENT_NAME!" -H "X-Folder-Target: !FOLDER_TARGET!" -H "X-File-Name: !FNAME_ONLY!" -H "X-File-Size: !FILE_SIZE!" --data-binary "@!STAGE_FILE!" >nul 2>&1
+        "%CURL%" -4 --ssl-no-revoke --http1.1 -H "Expect:" --fail --max-time 45 --connect-timeout 10 -s -k -X POST "!API_URL_PRIMARY!?token=!API_TOKEN!" -H "X-Client-Event: !EVENT_NAME!" -H "X-Folder-Target: !FOLDER_TARGET!" -H "X-File-Name: !FNAME_ONLY!" -H "X-File-Size: !FILE_SIZE!" --data-binary "@!STAGE_FILE!" >nul 2>&1
         IF !ERRORLEVEL! EQU 0 (
             DEL /F /Q "!STAGE_FILE!" >nul 2>&1
             >> "%SENT_LOG%" ECHO !CURRENT_FILE!
@@ -572,7 +582,7 @@ IF "!CURL_ERR!"=="22" (
         )
     ) ELSE (
         CALL :force_recompress "!CURRENT_FILE!" "!STAGE_FILE!" "!FILE_EXT!"
-        "%CURL%" -4 --ssl-no-revoke --http1.1 -H "Expect:" --fail --max-time 120 --connect-timeout 15 -s -k -X POST "!API_URL_PRIMARY!" -F "token=!API_TOKEN!" -F "client_event=!EVENT_NAME!" -F "folder_target=!FOLDER_TARGET!" -F "file=@!STAGE_FILE!" >nul 2>&1
+        "%CURL%" -4 --ssl-no-revoke --http1.1 -H "Expect:" --fail --max-time 35 --connect-timeout 10 -s -k -X POST "!API_URL_PRIMARY!" -F "token=!API_TOKEN!" -F "client_event=!EVENT_NAME!" -F "folder_target=!FOLDER_TARGET!" -F "file=@!STAGE_FILE!" >nul 2>&1
         IF !ERRORLEVEL! EQU 0 (
             DEL /F /Q "!STAGE_FILE!" >nul 2>&1
             >> "%SENT_LOG%" ECHO !CURRENT_FILE!
@@ -583,7 +593,7 @@ IF "!CURL_ERR!"=="22" (
 )
 
 :: 2. Kirim ke Server Cadangan (qr.yuhu.co.id)
-"%CURL%" -4 --ssl-no-revoke --http1.1 -H "Expect:" --fail --max-time 300 --connect-timeout 20 -s -k -X POST "!API_URL_FALLBACK!" -F "token=!API_TOKEN!" -F "client_event=!EVENT_NAME!" -F "folder_target=!FOLDER_TARGET!" -F "file=@!STAGE_FILE!" >nul 2>&1
+"%CURL%" -4 --ssl-no-revoke --http1.1 -H "Expect:" --fail --max-time 35 --connect-timeout 10 -s -k -X POST "!API_URL_FALLBACK!" -F "token=!API_TOKEN!" -F "client_event=!EVENT_NAME!" -F "folder_target=!FOLDER_TARGET!" -F "file=@!STAGE_FILE!" >nul 2>&1
 SET "CURL_ERR_FB=!ERRORLEVEL!"
 
 IF "!CURL_ERR_FB!"=="0" (
