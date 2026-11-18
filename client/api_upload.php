@@ -274,7 +274,7 @@ if ($is_raw_stream) {
     }
 }
 
-// Multi-PC Collision Protection: Cek apakah sudah ada file dengan nama sama di tujuan
+// Multi-PC Idempotency: Jika file sudah ada di tujuan dengan ukuran sama persis, langsung sukses
 if (file_exists($target_path) && $actual_size > 0) {
     $existing_size = @filesize($target_path);
     if ($existing_size === $actual_size) {
@@ -288,26 +288,10 @@ if (file_exists($target_path) && $actual_size > 0) {
             "event" => $matched_folder
         ]);
         exit;
-    } else {
-        $file_hash = substr(@md5_file($temp_path) ?: uniqid(), 0, 4);
-        $base_no_ext = pathinfo($filename, PATHINFO_FILENAME);
-        $filename = $base_no_ext . '_' . $file_hash . '.' . $ext;
-        $target_path = $upload_dir . $filename;
-        if (file_exists($target_path) && @filesize($target_path) === $actual_size) {
-            @unlink($temp_path);
-            http_response_code(200);
-            echo json_encode([
-                "status" => "success",
-                "message" => "File $filename sudah ada secara utuh di folder $target_folder",
-                "file" => $filename,
-                "folder" => $target_folder,
-                "event" => $matched_folder
-            ]);
-            exit;
-        }
     }
 }
 
+// Simpan file ke target secara atomik (tanpa membuat duplikat hash agar galeri tidak double)
 if (!@rename($temp_path, $target_path)) {
     @copy($temp_path, $target_path);
     @unlink($temp_path);

@@ -20,7 +20,7 @@ SETLOCAL EnableDelayedExpansion
 :: ============================================================================
 
 SET "API_URL_PRIMARY=https://files.yuhu.co.id/client/api_upload.php"
-SET "API_URL_FALLBACK=https://qr.yuhu.co.id/client/api_upload.php"
+SET "API_URL_FALLBACK=https://files.yuhu.co.id/client/api_upload.php"
 SET "API_TOKEN=YuhuSecretToken2026"
 
 SET "CURL=%SystemRoot%\System32\curl.exe"
@@ -243,6 +243,12 @@ IF /I NOT "!FILE_PARAM:\Single\=!"=="!FILE_PARAM!" EXIT /B 0
 IF /I NOT "!FILE_PARAM:\Originals\=!"=="!FILE_PARAM!" EXIT /B 0
 IF /I NOT "!FILE_PARAM:\Original\=!"=="!FILE_PARAM!" EXIT /B 0
 
+:: Cegah foto double & hemat bandwidth: Jika ini adalah _2x.jpg dan file _1x.jpg ada, lewati _2x
+IF /I NOT "!FNAME:_2x.jpg=!"=="!FNAME!" (
+    SET "PAIR_1X_FULL=!FILE_PARAM:_2x.jpg=_1x.jpg!"
+    IF EXIST "!PAIR_1X_FULL!" EXIT /B 0
+)
+
 :: Catat folder project yang sedang aktif dari path file ini
 SET "P_MEDIA_DIR=!P_MEDIA_DIR:~0,-1!"
 FOR %%P IN ("!P_MEDIA_DIR!") DO SET "P_EVENT_DIR=%%~dpP"
@@ -402,7 +408,15 @@ IF NOT EXIST "!TARGET_PROJ!" EXIT /B 0
 
 IF EXIST "!TARGET_PROJ!\Prints" (
     FOR /F "delims=" %%F IN ('DIR "!TARGET_PROJ!\Prints" /A-D /B /O-D 2^>nul') DO (
-        >> "%RAW_LIST%" ECHO !TARGET_PROJ!\Prints\%%F
+        SET "SKIP_PRINT=0"
+        SET "PRINT_FN=%%F"
+        IF /I NOT "!PRINT_FN:_2x.jpg=!"=="!PRINT_FN!" (
+            SET "PAIR_1X_FN=!PRINT_FN:_2x.jpg=_1x.jpg!"
+            IF EXIST "!TARGET_PROJ!\Prints\!PAIR_1X_FN!" SET "SKIP_PRINT=1"
+        )
+        IF "!SKIP_PRINT!"=="0" (
+            >> "%RAW_LIST%" ECHO !TARGET_PROJ!\Prints\%%F
+        )
     )
 )
 IF EXIST "!TARGET_PROJ!\Animated" (
@@ -592,14 +606,14 @@ IF "!CURL_ERR!"=="22" (
     )
 )
 
-:: 2. Kirim ke Server Cadangan (qr.yuhu.co.id)
+:: 2. Percobaan Cadangan (Retry ke files.yuhu.co.id)
 "%CURL%" -4 --ssl-no-revoke --http1.1 -H "Expect:" --fail --max-time 35 --connect-timeout 10 -s -k -X POST "!API_URL_FALLBACK!" -F "token=!API_TOKEN!" -F "client_event=!EVENT_NAME!" -F "folder_target=!FOLDER_TARGET!" -F "file=@!STAGE_FILE!" >nul 2>&1
 SET "CURL_ERR_FB=!ERRORLEVEL!"
 
 IF "!CURL_ERR_FB!"=="0" (
     DEL /F /Q "!STAGE_FILE!" >nul 2>&1
     >> "%SENT_LOG%" ECHO !CURRENT_FILE!
-    > "%LOG_FILE%" ECHO [%DATE% %TIME%] SUKSES UPLOAD KE QR.YUHU.CO.ID: !EVENT_NAME!/!FOLDER_TARGET! - !FNAME_ONLY!
+    > "%LOG_FILE%" ECHO [%DATE% %TIME%] SUKSES UPLOAD (RETRY) KE FILES.YUHU.CO.ID: !EVENT_NAME!/!FOLDER_TARGET! - !FNAME_ONLY!
     EXIT /B 0
 )
 

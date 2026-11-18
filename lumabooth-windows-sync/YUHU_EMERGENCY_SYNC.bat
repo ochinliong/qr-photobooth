@@ -26,9 +26,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
     "$files = @();" ^
     "$pDir = Join-Path $activeProj.FullName 'Prints';" ^
     "$aDir = Join-Path $activeProj.FullName 'Animated';" ^
-    "if (Test-Path $pDir) { Get-ChildItem -File $pDir | Where-Object { $_.Extension -match '\.(jpg|jpeg|png)$' -and $_.Name -notmatch '_mp4\.jpg$' } | ForEach-Object { $files += [PSCustomObject]@{ File=$_; Target='Prints'; Event=$activeProj.Name } } };" ^
+    "if (Test-Path $pDir) {" ^
+    "    $allP = Get-ChildItem -File $pDir | Where-Object { $_.Extension -match '\.(jpg|jpeg|png)$' -and $_.Name -notmatch '_mp4\.jpg$' };" ^
+    "    foreach ($p in $allP) {" ^
+    "        if ($p.Name -match '_2x\.(jpg|jpeg|png)$') {" ^
+    "            $pair1x = $p.Name -replace '_2x\.', '_1x.';" ^
+    "            if (Test-Path (Join-Path $pDir $pair1x)) { continue };" ^
+    "        };" ^
+    "        $files += [PSCustomObject]@{ File=$p; Target='Prints'; Event=$activeProj.Name };" ^
+    "    };" ^
+    "};" ^
     "if (Test-Path $aDir) { Get-ChildItem -File $aDir | Where-Object { $_.Extension -match '\.(mp4|mov|webm|gif)$' -and $_.Name -notmatch '_mp4\.jpg$' } | ForEach-Object { $files += [PSCustomObject]@{ File=$_; Target='Animated'; Event=$activeProj.Name } } };" ^
-    "Write-Host \"[*] Memulai upload $($files.Count) media...\" -ForegroundColor Cyan;" ^
+    "Write-Host \"[*] Memulai upload $($files.Count) media (bebas duplikat)...\" -ForegroundColor Cyan;" ^
     "$idx = 0; $sukses = 0; $gagal = 0;" ^
     "foreach ($item in $files) {" ^
     "    $idx++; $f = $item.File; $tgt = $item.Target; $ev = $item.Event;" ^
@@ -44,7 +53,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
     "while ($true) {" ^
     "    Start-Sleep -Seconds 3;" ^
     "    $newFiles = @();" ^
-    "    if (Test-Path $pDir) { Get-ChildItem -File $pDir | Where-Object { (Get-Date) - $_.LastWriteTime -lt (New-TimeSpan -Minutes 2) -and $_.Extension -match '\.(jpg|jpeg|png)$' -and $_.Name -notmatch '_mp4\.jpg$' } | ForEach-Object { $newFiles += [PSCustomObject]@{ File=$_; Target='Prints'; Event=$activeProj.Name } } };" ^
+    "    if (Test-Path $pDir) {" ^
+    "        $recentP = Get-ChildItem -File $pDir | Where-Object { (Get-Date) - $_.LastWriteTime -lt (New-TimeSpan -Minutes 2) -and $_.Extension -match '\.(jpg|jpeg|png)$' -and $_.Name -notmatch '_mp4\.jpg$' };" ^
+    "        foreach ($np in $recentP) {" ^
+    "            if ($np.Name -match '_2x\.(jpg|jpeg|png)$') {" ^
+    "                $p1x = $np.Name -replace '_2x\.', '_1x.';" ^
+    "                if (Test-Path (Join-Path $pDir $p1x)) { continue };" ^
+    "            };" ^
+    "            $newFiles += [PSCustomObject]@{ File=$np; Target='Prints'; Event=$activeProj.Name };" ^
+    "        };" ^
+    "    };" ^
     "    if (Test-Path $aDir) { Get-ChildItem -File $aDir | Where-Object { (Get-Date) - $_.LastWriteTime -lt (New-TimeSpan -Minutes 2) -and $_.Extension -match '\.(mp4|mov|webm|gif)$' -and $_.Name -notmatch '_mp4\.jpg$' } | ForEach-Object { $newFiles += [PSCustomObject]@{ File=$_; Target='Animated'; Event=$activeProj.Name } } };" ^
     "    foreach ($nf in $newFiles) {" ^
     "        $f = $nf.File; $tgt = $nf.Target; $ev = $nf.Event;" ^

@@ -149,7 +149,8 @@ $is_admin_or_op = (!empty($_SESSION['admin_id']) || !empty($_SESSION['operator_l
 $is_single_view_param = !empty($_GET['single_file']) ? trim($_GET['single_file']) : (!empty($_GET['file']) ? trim($_GET['file']) : '');
 
 // Cek Penguncian Galeri setelah Acara Selesai (Fitur Kerahasiaan File)
-$lock_setting = isset($db_client['lock_after_event']) ? (int)$db_client['lock_after_event'] : 1;
+// Default: Tidak terkunci (0) agar tidak mengganggu operasional live event
+$lock_setting = isset($db_client['lock_after_event']) ? (int)$db_client['lock_after_event'] : 0;
 $is_event_locked = false;
 if ($lock_setting === 1 && $db_client && !empty($db_client['tanggal_event']) && !empty($db_client['jam_selesai'])) {
     try {
@@ -162,6 +163,8 @@ if ($lock_setting === 1 && $db_client && !empty($db_client['tanggal_event']) && 
                 $end_dt->modify('+1 day');
             }
         }
+        // Beri kelonggaran waktu (grace period) 12 jam setelah jam acara selesai sebelum galeri dikunci
+        $end_dt->modify('+12 hours');
         if ($now_dt > $end_dt) {
             $is_event_locked = true;
         }
@@ -352,11 +355,23 @@ if (!$use_cache) {
     $zip_total_mb = round($zip_total_bytes / (1024 * 1024), 1);
 
     // =========================================================================
-    // ALGORITMA GROUPING PER SESI LUMABOOTH (Anchor-Based Proximity <= 45 detik)
-    // Mengelompokkan Prints + Animated (MP4/GIF) + Singles dari 1 sesi foto tamu!
+    // ALGORITMA GROUPING PER SESI LUMABOOTH (STRICT SESSION ISOLATION)
+    // Setiap sesi LumaBooth memiliki ID unik (berdasarkan timestamp YYYYMMDD_HHMMSS_mmm).
+    // Mendukung 2-5+ komputer booth sekaligus tanpa risiko sesi tertukar/tertelan.
     // =========================================================================
     $sessions_map = [];
-    $anchor_timestamps = [];
+
+    $extractSessionId = function($filename) {
+        if (preg_match('/^(\d{8}_\d{6}_\d{3})/', $filename, $m)) {
+            return $m[1];
+        }
+        if (preg_match('/^(\d{8}_\d{6})/', $filename, $m)) {
+            return $m[1];
+        }
+        // Fallback untuk file tanpa timestamp LumaBooth standar
+        $clean = preg_replace('/(_\d+x|_mp4|_gif|\.[a-zA-Z0-9]+)$/i', '', $filename);
+        return $clean !== '' ? $clean : $filename;
+    };
 
     $extractTs = function($fname, $fallback_time) {
         if (preg_match('/(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})/', $fname, $m)) {
@@ -365,81 +380,33 @@ if (!$use_cache) {
         return $fallback_time;
     };
 
-    // Tahap 1: Daftarkan semua Anchor Sesi terlebih dahulu (dari Prints / Animated / Videos / GIF)
-    foreach ($files_data as $data) {
-        $path_lower = strtolower($data['file']);
-        $filename = basename($data['file']);
-        $ext = $data['ext'];
-
-        if (strpos($path_lower, 'prints/') !== false ||
-            strpos($path_lower, 'animated/') !== false ||
-            strpos($path_lower, 'videos/') !== false ||
-            in_array($ext, ['mp4', 'gif', 'mov', 'webm'])) {
-
-            if (preg_match('/^(\d{8}_\d{6}_\d{3})/', $filename, $matches)) {
-                $base_id = $matches[1];
-            } else {
-                $base_id = preg_replace('/(_mp4|_gif|\.[a-zA-Z0-9]+)$/i', '', $filename);
-            }
-
-            if (!isset($sessions_map[$base_id])) {
-                $ts = $extractTs($filename, $data['time']);
-                $sessions_map[$base_id] = [
-                    'id' => 'session_' . $base_id,
-                    'time' => $ts,
-                    'files' => []
-                ];
-                $anchor_timestamps[$base_id] = $ts;
-            }
-        }
-    }
-
-    // Tahap 2: Masukkan seluruh file (termasuk Singles & Originals) ke Sesi Anchor terdekat
+    // Kelompokkan setiap file ke dalam sesi miliknya secara presisi
     foreach ($files_data as $data) {
         $filename = basename($data['file']);
+        $base_id = $extractSessionId($filename);
         $ts = $extractTs($filename, $data['time']);
 
-        if (preg_match('/^(\d{8}_\d{6}_\d{3})/', $filename, $matches)) {
-            $base_id = $matches[1];
-        } else {
-            $base_id = preg_replace('/(_mp4|_gif|\.[a-zA-Z0-9]+)$/i', '', $filename);
+        if (!isset($sessions_map[$base_id])) {
+            $sessions_map[$base_id] = [
+                'id' => 'session_' . $base_id,
+                'time' => $ts,
+                'files' => []
+            ];
         }
 
-        if (isset($sessions_map[$base_id])) {
+        // Cegah penambahan file duplikat persis ke dalam sesi yang sama
+        $already_exists = false;
+        foreach ($sessions_map[$base_id]['files'] as $existing_f) {
+            if ($existing_f['file'] === $data['file']) {
+                $already_exists = true;
+                break;
+            }
+        }
+
+        if (!$already_exists) {
             $sessions_map[$base_id]['files'][] = $data;
             if ($ts > $sessions_map[$base_id]['time']) {
                 $sessions_map[$base_id]['time'] = $ts;
-            }
-            continue;
-        }
-
-        $best_anchor_id = null;
-        $min_diff = 999999;
-        foreach ($anchor_timestamps as $aid => $ats) {
-            $diff = abs($ats - $ts);
-            if ($diff <= 45 && $diff < $min_diff) {
-                $min_diff = $diff;
-                $best_anchor_id = $aid;
-            }
-        }
-
-        if ($best_anchor_id !== null) {
-            $sessions_map[$best_anchor_id]['files'][] = $data;
-            if ($ts > $sessions_map[$best_anchor_id]['time']) {
-                $sessions_map[$best_anchor_id]['time'] = $ts;
-            }
-        } else {
-            if (!isset($sessions_map[$base_id])) {
-                $sessions_map[$base_id] = [
-                    'id' => 'session_' . $base_id,
-                    'time' => $ts,
-                    'files' => [$data]
-                ];
-            } else {
-                $sessions_map[$base_id]['files'][] = $data;
-                if ($ts > $sessions_map[$base_id]['time']) {
-                    $sessions_map[$base_id]['time'] = $ts;
-                }
             }
         }
     }
@@ -479,9 +446,9 @@ if (!$use_cache) {
         }
     }
 
-    // Urutkan isi file dalam tiap sesi: 1. Prints (Cover Utama), 2. Video Animated (MP4 Asli), 3. Animasi GIF, 4. Singles
+    // Pembersihan, Deduplikasi & Pengurutan isi file dalam tiap sesi
     foreach ($sessions_map as &$session) {
-        // Jika sesi memiliki video MP4/MOV/WebM asli, singkirkan file GIF resolusi rendah agar kualitas tidak pecah
+        // 1. Jika sesi memiliki video MP4/MOV/WebM asli, singkirkan file GIF resolusi rendah agar tidak boros
         $has_hd_video = false;
         foreach ($session['files'] as $f) {
             $f_ext = strtolower($f['ext'] ?? '');
@@ -496,6 +463,45 @@ if (!$use_cache) {
             }));
         }
 
+        // 2. SOLUSI FOTO DOUBLE DI SESI SAMA:
+        //    LumaBooth mencetak 2 strip potong (2x) dan menyimpan strip tunggal (1x).
+        //    Jika dalam sesi terdapat _1x (strip tunggal tajam untuk HP) dan _2x (lembar print ganda),
+        //    utamakan _1x dan singkirkan _2x agar tamu tidak melihat foto yang sama 2 kali.
+        $has_1x = false;
+        foreach ($session['files'] as $f) {
+            $f_lower = strtolower($f['file']);
+            if (strpos($f_lower, 'prints/') !== false && preg_match('/_1x\.[a-z0-9]+$/i', $f_lower)) {
+                $has_1x = true;
+                break;
+            }
+        }
+        if ($has_1x) {
+            $session['files'] = array_values(array_filter($session['files'], function($f) {
+                $f_lower = strtolower($f['file']);
+                if (strpos($f_lower, 'prints/') !== false && preg_match('/_2x\.[a-z0-9]+$/i', $f_lower)) {
+                    return false;
+                }
+                return true;
+            }));
+        }
+
+        // 3. Singkirkan duplikasi file yang memiliki varian hash (misal file_a1b2.jpg saat file.jpg sudah ada)
+        $has_base_photo = false;
+        foreach ($session['files'] as $f) {
+            $base_name = pathinfo($f['file'], PATHINFO_FILENAME);
+            if (!preg_match('/_[a-f0-9]{4}$/i', $base_name)) {
+                $has_base_photo = true;
+                break;
+            }
+        }
+        if ($has_base_photo) {
+            $session['files'] = array_values(array_filter($session['files'], function($f) {
+                $base_name = pathinfo($f['file'], PATHINFO_FILENAME);
+                return !preg_match('/_[a-f0-9]{4}$/i', $base_name);
+            }));
+        }
+
+        // 4. Urutkan prioritas tampilan: 1. Prints (Foto Cetak / Cover), 2. Video Animated (MP4), 3. Animasi GIF, 4. Singles
         usort($session['files'], function($a, $b) {
             $getPriority = function($f) {
                 $path_lower = strtolower($f['file']);
