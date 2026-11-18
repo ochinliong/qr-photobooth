@@ -209,6 +209,14 @@ async function handleScanFile(input) {
     stepSuccess.style.display = 'none';
     stepFail.style.display = 'none';
 
+    // Sesuaikan status deskripsi pemindaian jika dibatasi per-event
+    if (window.TARGET_EVENT_TITLE) {
+        const scanTitleEl = document.querySelector('.scanning-title');
+        const scanDescEl = document.querySelector('.scanning-desc');
+        if (scanTitleEl) scanTitleEl.innerText = 'Mencari di Galeri Acara...';
+        if (scanDescEl) scanDescEl.innerText = 'Mencocokkan visual foto Anda dengan arsip acara ' + window.TARGET_EVENT_TITLE;
+    }
+
     try {
         const processed = await preprocessImage(file);
         const preview = document.getElementById('scanningPreviewImg');
@@ -463,9 +471,16 @@ async function handleDownloadOrSaveMedia() {
 async function executeGlobalScan(fileBlob) {
     const formData = new FormData();
     formData.append('photo', fileBlob, 'scan_query.jpg');
+    if (window.TARGET_EVENT) {
+        formData.append('event', window.TARGET_EVENT);
+    }
+
+    const endpointUrl = window.TARGET_EVENT
+        ? `search_all.php?event=${encodeURIComponent(window.TARGET_EVENT)}`
+        : 'search_all.php';
 
     try {
-        const response = await fetch('search_all.php', {
+        const response = await fetch(endpointUrl, {
             method: 'POST',
             body: formData
         });

@@ -148,6 +148,38 @@ $is_vip_mode = isset($_GET['vip']) && $_GET['vip'] === '1';
 $is_admin_or_op = (!empty($_SESSION['admin_id']) || !empty($_SESSION['operator_logged_in']));
 $is_single_view_param = !empty($_GET['single_file']) ? trim($_GET['single_file']) : (!empty($_GET['file']) ? trim($_GET['file']) : '');
 
+$enable_visual_search = true;
+if ($db_client && isset($db_client['enable_visual_search'])) {
+    $enable_visual_search = ((int)$db_client['enable_visual_search'] === 1);
+}
+
+$config_path = $target_dir . '/config.json';
+if (file_exists($config_path)) {
+    $json = json_decode(file_get_contents($config_path), true);
+    if (!empty($json['title'])) {
+        $display_title = $json['title'];
+        $display_tab_title = "Galeri - " . $display_title;
+    }
+    if (!empty(trim($json['subtitle'] ?? ''))) {
+        $display_subtitle = $json['subtitle'];
+    }
+    if (!empty(trim($json['tab_title'] ?? ''))) {
+        $display_tab_title = trim($json['tab_title']);
+    }
+    if (isset($json['visible_folders']) && is_array($json['visible_folders'])) {
+        $visible_folders = $json['visible_folders'];
+    }
+    if (isset($json['hidden_files']) && is_array($json['hidden_files'])) {
+        $hidden_files = $json['hidden_files'];
+    }
+    if (isset($json['pinned_sessions']) && is_array($json['pinned_sessions'])) {
+        $pinned_sessions = $json['pinned_sessions'];
+    }
+    if (isset($json['enable_visual_search'])) {
+        $enable_visual_search = (bool)$json['enable_visual_search'];
+    }
+}
+
 // Cek Penguncian Galeri setelah Acara Selesai (Fitur Kerahasiaan File)
 // Default: Tidak terkunci (0) agar tidak mengganggu operasional live event
 $lock_setting = isset($db_client['lock_after_event']) ? (int)$db_client['lock_after_event'] : 0;
@@ -188,38 +220,6 @@ if ($is_event_locked && !$is_vip_mode && !$is_admin_or_op && empty($is_single_vi
     }
     include __DIR__ . '/locked_view.php';
     exit;
-}
-
-$enable_visual_search = true;
-if ($db_client && isset($db_client['enable_visual_search'])) {
-    $enable_visual_search = ((int)$db_client['enable_visual_search'] === 1);
-}
-
-$config_path = $target_dir . '/config.json';
-if (file_exists($config_path)) {
-    $json = json_decode(file_get_contents($config_path), true);
-    if (!empty($json['title'])) {
-        $display_title = $json['title'];
-        $display_tab_title = "Galeri - " . $display_title;
-    }
-    if (!empty(trim($json['subtitle'] ?? ''))) {
-        $display_subtitle = $json['subtitle'];
-    }
-    if (!empty(trim($json['tab_title'] ?? ''))) {
-        $display_tab_title = trim($json['tab_title']);
-    }
-    if (isset($json['visible_folders']) && is_array($json['visible_folders'])) {
-        $visible_folders = $json['visible_folders'];
-    }
-    if (isset($json['hidden_files']) && is_array($json['hidden_files'])) {
-        $hidden_files = $json['hidden_files'];
-    }
-    if (isset($json['pinned_sessions']) && is_array($json['pinned_sessions'])) {
-        $pinned_sessions = $json['pinned_sessions'];
-    }
-    if (isset($json['enable_visual_search'])) {
-        $enable_visual_search = (bool)$json['enable_visual_search'];
-    }
 }
 
 // Endpoint AJAX: Toggle Pin Foto Favorit (Khusus Pengantin VIP / Admin)

@@ -1,6 +1,68 @@
 <?php
 require_once __DIR__ . '/../config.php';
 $app_base_url = rtrim($base_url ?? 'https://files.yuhu.co.id', '/');
+
+// Resolusi parameter event (jika dipanggil dari galeri acara / locked view)
+$target_event_raw = trim($_GET['event'] ?? ($_GET['client'] ?? ''));
+$target_event_clean = str_replace(['..', '/', '\\', "\0"], '', $target_event_raw);
+
+$event_title = '';
+$event_folder = '';
+$event_gallery_url = '';
+
+if ($target_event_clean !== '') {
+    define('LUMABOOTH_SKIP_AUTOSYNC', true);
+    require_once __DIR__ . '/../lumabooth_sync.php';
+
+    $photos_root = __DIR__ . '/../client/photos';
+    $req_clean = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $target_event_clean));
+
+    // Cocokkan dengan database klien jika ada
+    $db_client = null;
+    try {
+        $stmt = $pdo->query("SELECT * FROM clients ORDER BY id DESC");
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $c_name = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $row['nama_client']));
+            $c_slug = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $row['slug']));
+            $c_folder = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', extractLumaboothFolderFromUrl($row['folder_foto_path'] ?? '')));
+            if ($req_clean !== '' && ($c_name === $req_clean || $c_slug === $req_clean || ($c_folder !== '' && $c_folder === $req_clean))) {
+                $db_client = $row;
+                break;
+            }
+        }
+    } catch (Exception $e) {}
+
+    $resolved_folder = $target_event_clean;
+    if (!is_dir($photos_root . '/' . $resolved_folder)) {
+        $search_candidates = [$req_clean];
+        if ($db_client) {
+            $search_candidates[] = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $db_client['nama_client']));
+            $f_hint = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', extractLumaboothFolderFromUrl($db_client['folder_foto_path'] ?? '')));
+            if ($f_hint !== '') $search_candidates[] = $f_hint;
+        }
+        $dirs = @scandir($photos_root) ?: [];
+        foreach ($dirs as $dir) {
+            if ($dir !== '.' && $dir !== '..' && is_dir($photos_root . '/' . $dir)) {
+                $dir_clean = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $dir));
+                if ($dir_clean !== '' && in_array($dir_clean, $search_candidates, true)) {
+                    $resolved_folder = $dir;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (is_dir($photos_root . '/' . $resolved_folder)) {
+        $event_folder = $resolved_folder;
+        $event_title = $db_client ? $db_client['nama_client'] : str_replace('_', ' ', $resolved_folder);
+        $cfg_path = $photos_root . '/' . $resolved_folder . '/config.json';
+        if (file_exists($cfg_path)) {
+            $cfg = @json_decode(@file_get_contents($cfg_path), true);
+            if (!empty($cfg['title'])) $event_title = $cfg['title'];
+        }
+        $event_gallery_url = $app_base_url . '/client/' . rawurlencode($resolved_folder);
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -11,24 +73,28 @@ $app_base_url = rtrim($base_url ?? 'https://files.yuhu.co.id', '/');
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="format-detection" content="telephone=no">
-    <title>YUHU Photobooth - Pencarian Foto Cetakan</title>
-    <meta name="description" content="Pindai foto cetakan fisik photobooth Anda untuk menemukan softfile dan video aslinya secara otomatis di seluruh galeri YUHU Photobooth.">
+    <title><?php echo !empty($event_title) ? ('Cari Foto - ' . htmlspecialchars($event_title)) : 'YUHU Photobooth - Pencarian Foto Cetakan'; ?></title>
+    <meta name="description" content="Pindai foto cetakan fisik photobooth Anda untuk menemukan softfile dan video aslinya secara otomatis di galeri YUHU Photobooth.">
     <link rel="stylesheet" href="style.css?v=<?php echo @filemtime(__DIR__ . '/style.css') ?: '2'; ?>">
 </head>
 <body>
     <div class="scan-container">
         <!-- Header -->
         <header class="scan-header">
-            <a href="https://www.yuhu.co.id" class="scan-logo-link">
+            <a href="<?php echo htmlspecialchars($event_gallery_url ?: 'https://www.yuhu.co.id'); ?>" class="scan-logo-link">
                 <img src="logo-white.png?v=<?php echo @filemtime(__DIR__ . '/logo-white.png') ?: '1'; ?>" alt="YUHU Photobooth" class="scan-logo" onerror="this.onerror=null; this.src='../client/logo.png'; this.classList.add('filter-white');">
             </a>
             <div class="scan-pill-badge">
                 <span class="dot"></span>
-                <span>Pencarian Cerdas</span>
+                <span><?php echo !empty($event_folder) ? 'Pencarian Khusus Acara' : 'Pencarian Cerdas'; ?></span>
             </div>
             <h1 class="scan-title">Pencarian Foto Cetakan</h1>
             <p class="scan-subtitle">
+                <?php if (!empty($event_folder)): ?>
+                Arahkan kamera ke foto cetakan fisik Anda untuk menemukan softfile asli & video khusus acara <strong><?php echo htmlspecialchars($event_title); ?></strong> secara instan.
+                <?php else: ?>
                 Arahkan kamera ke foto cetakan fisik Anda untuk menemukan softfile asli dan video dari seluruh arsip galeri YUHU Photobooth.
+                <?php endif; ?>
             </p>
         </header>
 
@@ -81,6 +147,11 @@ $app_base_url = rtrim($base_url ?? 'https://files.yuhu.co.id', '/');
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
                         Pilih dari Galeri HP
                     </button>
+                    <?php if (!empty($event_gallery_url)): ?>
+                    <a href="<?php echo htmlspecialchars($event_gallery_url); ?>" class="btn-link" style="margin-top:6px; color:#94a3b8; font-size:13px; text-decoration:none; display:inline-block; text-align:center;">
+                        ← Kembali ke Halaman Acara
+                    </a>
+                    <?php endif; ?>
                 </div>
             </div>
 
@@ -92,8 +163,8 @@ $app_base_url = rtrim($base_url ?? 'https://files.yuhu.co.id', '/');
                     <div class="scan-pulse-ring"></div>
                 </div>
                 <div class="scanning-status">
-                    <h3 class="scanning-title">Mencari di Seluruh Galeri...</h3>
-                    <p class="scanning-desc">Mencocokkan visual foto Anda dengan arsip acara YUHU Photobooth</p>
+                    <h3 class="scanning-title"><?php echo !empty($event_folder) ? 'Mencari di Galeri Acara...' : 'Mencari di Seluruh Galeri...'; ?></h3>
+                    <p class="scanning-desc"><?php echo !empty($event_folder) ? ('Mencocokkan visual foto Anda dengan arsip acara ' . htmlspecialchars($event_title)) : 'Mencocokkan visual foto Anda dengan arsip acara YUHU Photobooth'; ?></p>
                 </div>
             </div>
 
@@ -117,7 +188,7 @@ $app_base_url = rtrim($base_url ?? 'https://files.yuhu.co.id', '/');
 
                 <div class="event-info-card">
                     <div class="event-info-label">Ditemukan pada Acara:</div>
-                    <div class="event-info-name" id="matchEventName">-</div>
+                    <div class="event-info-name" id="matchEventName"><?php echo !empty($event_title) ? htmlspecialchars($event_title) : '-'; ?></div>
                     <div class="event-info-meta" id="matchEventMeta"></div>
                 </div>
 
@@ -145,6 +216,12 @@ $app_base_url = rtrim($base_url ?? 'https://files.yuhu.co.id', '/');
                 <button type="button" onclick="resetScan()" class="btn-link" style="width:100%; margin-top:14px;">
                     Pindai Foto Cetakan Lain
                 </button>
+
+                <?php if (!empty($event_gallery_url)): ?>
+                <a href="<?php echo htmlspecialchars($event_gallery_url); ?>" class="btn-link" style="width:100%; margin-top:8px; display:inline-block; text-align:center; font-size:12.5px; color:#94a3b8; text-decoration:none;">
+                    ← Kembali ke Halaman Acara
+                </a>
+                <?php endif; ?>
             </div>
 
             <!-- Step 4: Tidak Ditemukan -->
@@ -161,6 +238,11 @@ $app_base_url = rtrim($base_url ?? 'https://files.yuhu.co.id', '/');
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
                         Coba Foto Ulang
                     </button>
+                    <?php if (!empty($event_gallery_url)): ?>
+                    <a href="<?php echo htmlspecialchars($event_gallery_url); ?>" class="btn-link" style="width:100%; margin-top:10px; display:inline-block; text-align:center; font-size:12.5px; color:#94a3b8; text-decoration:none;">
+                        ← Kembali ke Halaman Acara
+                    </a>
+                    <?php endif; ?>
                 </div>
             </div>
         </main>
@@ -171,6 +253,11 @@ $app_base_url = rtrim($base_url ?? 'https://files.yuhu.co.id', '/');
         </footer>
     </div>
 
+    <script>
+        window.TARGET_EVENT = <?php echo json_encode($event_folder ?: null); ?>;
+        window.TARGET_EVENT_TITLE = <?php echo json_encode($event_title ?: null); ?>;
+        window.TARGET_EVENT_URL = <?php echo json_encode($event_gallery_url ?: null); ?>;
+    </script>
     <script src="script.js?v=<?php echo @filemtime(__DIR__ . '/script.js') ?: '2'; ?>"></script>
 </body>
 </html>

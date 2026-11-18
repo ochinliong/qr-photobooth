@@ -553,31 +553,79 @@ try {
     }
 } catch (Exception $e) {}
 
+// Cek apakah pencarian dibatasi ke event tertentu (Scoped Event Search - Lebih Cepat & Privat)
+$scoped_param = trim($_POST['event'] ?? ($_GET['event'] ?? ($_POST['client'] ?? ($_GET['client'] ?? ''))));
+$scoped_param = str_replace(['..', '/', '\\', "\0"], '', $scoped_param);
+$scoped_clean = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $scoped_param));
+
 $all_events = [];
-$dirs = @scandir($photos_root) ?: [];
+$matched_scoped_dir = null;
 
-foreach ($dirs as $d) {
-    if ($d === '.' || $d === '..' || !is_dir($photos_root . '/' . $d)) continue;
+if ($scoped_clean !== '') {
+    // 1. Cek langsung nama folder asli di filesystem
+    if (is_dir($photos_root . '/' . $scoped_param)) {
+        $matched_scoped_dir = $scoped_param;
+    } else {
+        // 2. Cocokkan dengan database clients
+        $db_match = $db_clients_map[$scoped_clean] ?? null;
+        $candidates = [$scoped_clean];
+        if ($db_match) {
+            $candidates[] = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $db_match['nama_client']));
+            $f_hint = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', extractLumaboothFolderFromUrl($db_match['folder_foto_path'] ?? '')));
+            if ($f_hint !== '') $candidates[] = $f_hint;
+        }
 
+        // 3. Scan direktori photos untuk mencari folder yang cocok
+        $all_dirs = @scandir($photos_root) ?: [];
+        foreach ($all_dirs as $d) {
+            if ($d === '.' || $d === '..' || !is_dir($photos_root . '/' . $d)) continue;
+            $d_c = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $d));
+            if (in_array($d_c, $candidates, true)) {
+                $matched_scoped_dir = $d;
+                break;
+            }
+        }
+    }
+
+    if (!$matched_scoped_dir || !is_dir($photos_root . '/' . $matched_scoped_dir)) {
+        echo json_encode([
+            'success' => false,
+            'match_found' => false,
+            'message' => 'Folder galeri acara tidak ditemukan di server.'
+        ]);
+        exit;
+    }
+
+    $d = $matched_scoped_dir;
     $d_clean = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $d));
     $db_info = $db_clients_map[$d_clean] ?? null;
 
-    // Cek apakah visual search diaktifkan untuk event ini
     $is_enabled = true;
     if ($db_info && isset($db_info['enable_visual_search']) && (int)$db_info['enable_visual_search'] === 0) {
         $is_enabled = false;
     }
     $cfg_path = $photos_root . '/' . $d . '/config.json';
+    $cfg = [];
     if (file_exists($cfg_path)) {
-        $cfg = @json_decode(@file_get_contents($cfg_path), true);
+        $cfg = @json_decode(@file_get_contents($cfg_path), true) ?: [];
         if (isset($cfg['enable_visual_search'])) {
             $is_enabled = (bool)$cfg['enable_visual_search'];
         }
     }
 
-    if (!$is_enabled) continue; // Hormati pengaturan OFF
+    if (!$is_enabled) {
+        echo json_encode([
+            'success' => false,
+            'match_found' => false,
+            'message' => 'Fitur pencarian foto cetak dinonaktifkan untuk acara ini.'
+        ]);
+        exit;
+    }
 
     $event_title = $db_info ? $db_info['nama_client'] : str_replace('_', ' ', $d);
+    if (!empty($cfg['title'])) {
+        $event_title = $cfg['title'];
+    }
     $event_location = ($db_info && !empty(trim($db_info['lokasi'] ?? '')) && trim($db_info['lokasi']) !== '-') ? trim($db_info['lokasi']) : '';
     $event_date = '';
     if ($db_info && !empty($db_info['tanggal_event']) && $db_info['tanggal_event'] !== '0000-00-00') {
@@ -586,13 +634,7 @@ foreach ($dirs as $d) {
         $event_date = date('d', $tgl_obj) . ' ' . $bulan_indo[(int)date('m', $tgl_obj) - 1] . ' ' . date('Y', $tgl_obj);
     }
 
-    // Direct Gallery Link
     $event_url = $app_base_url . '/client/' . rawurlencode($d);
-    if ($db_info && !empty($db_info['tanggal_event']) && $db_info['tanggal_event'] !== '0000-00-00') {
-        $year = date('Y', strtotime($db_info['tanggal_event']));
-        $clean_name = preg_replace('/\s+/', '', $db_info['nama_client']);
-        $event_url = $app_base_url . '/' . $year . '/' . $clean_name;
-    }
 
     $all_events[] = [
         'folder' => $d,
@@ -602,6 +644,60 @@ foreach ($dirs as $d) {
         'url' => $event_url,
         'dir_path' => $photos_root . '/' . $d
     ];
+} else {
+    // Mode Global: Scan semua event yang diaktifkan
+    $dirs = @scandir($photos_root) ?: [];
+    foreach ($dirs as $d) {
+        if ($d === '.' || $d === '..' || !is_dir($photos_root . '/' . $d)) continue;
+
+        $d_clean = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $d));
+        $db_info = $db_clients_map[$d_clean] ?? null;
+
+        // Cek apakah visual search diaktifkan untuk event ini
+        $is_enabled = true;
+        if ($db_info && isset($db_info['enable_visual_search']) && (int)$db_info['enable_visual_search'] === 0) {
+            $is_enabled = false;
+        }
+        $cfg_path = $photos_root . '/' . $d . '/config.json';
+        $cfg = [];
+        if (file_exists($cfg_path)) {
+            $cfg = @json_decode(@file_get_contents($cfg_path), true) ?: [];
+            if (isset($cfg['enable_visual_search'])) {
+                $is_enabled = (bool)$cfg['enable_visual_search'];
+            }
+        }
+
+        if (!$is_enabled) continue; // Hormati pengaturan OFF
+
+        $event_title = $db_info ? $db_info['nama_client'] : str_replace('_', ' ', $d);
+        if (!empty($cfg['title'])) {
+            $event_title = $cfg['title'];
+        }
+        $event_location = ($db_info && !empty(trim($db_info['lokasi'] ?? '')) && trim($db_info['lokasi']) !== '-') ? trim($db_info['lokasi']) : '';
+        $event_date = '';
+        if ($db_info && !empty($db_info['tanggal_event']) && $db_info['tanggal_event'] !== '0000-00-00') {
+            $tgl_obj = strtotime($db_info['tanggal_event']);
+            $bulan_indo = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+            $event_date = date('d', $tgl_obj) . ' ' . $bulan_indo[(int)date('m', $tgl_obj) - 1] . ' ' . date('Y', $tgl_obj);
+        }
+
+        // Direct Gallery Link
+        $event_url = $app_base_url . '/client/' . rawurlencode($d);
+        if ($db_info && !empty($db_info['tanggal_event']) && $db_info['tanggal_event'] !== '0000-00-00') {
+            $year = date('Y', strtotime($db_info['tanggal_event']));
+            $clean_name = preg_replace('/\s+/', '', $db_info['nama_client']);
+            $event_url = $app_base_url . '/' . $year . '/' . $clean_name;
+        }
+
+        $all_events[] = [
+            'folder' => $d,
+            'title' => $event_title,
+            'location' => $event_location,
+            'date' => $event_date,
+            'url' => $event_url,
+            'dir_path' => $photos_root . '/' . $d
+        ];
+    }
 }
 
 $all_candidate_signatures = [];
@@ -684,10 +780,15 @@ foreach ($all_events as $ev) {
 }
 
 if (empty($all_candidate_signatures)) {
+    $noPhotosMsg = ($matched_scoped_dir !== null && !empty($all_events[0]['title']))
+        ? ('Belum ada foto master cetakan yang terunggah untuk acara ' . $all_events[0]['title'] . '.')
+        : 'Belum ada foto master cetakan yang terunggah di server YUHU Photobooth.';
+
     echo json_encode([
         'success' => true,
         'match_found' => false,
-        'message' => 'Belum ada foto master cetakan yang terunggah di server YUHU Photobooth.',
+        'message' => $noPhotosMsg,
+        'scoped_event' => $matched_scoped_dir,
         'total_events_searched' => count($all_events),
         'total_photos_searched' => 0
     ]);
@@ -758,6 +859,20 @@ function collectSessionMedia($dirPath, $baseId, $app_base_url, $folderName) {
         }));
     }
 
+    // Deduplikasi cetakan ganda (_1x vs _2x) dalam sesi yang sama jika keduanya ada
+    $has1x = false;
+    foreach ($mediaList as $m) {
+        if (preg_match('/_1x\.(jpg|jpeg|png)$/i', $m['name'])) {
+            $has1x = true;
+            break;
+        }
+    }
+    if ($has1x) {
+        $mediaList = array_values(array_filter($mediaList, function($m) {
+            return !preg_match('/_2x\.(jpg|jpeg|png)$/i', $m['name']);
+        }));
+    }
+
     // Urutkan: Foto Cetak di urutan pertama, Video kedua, Foto Satuan berikutnya
     usort($mediaList, function($a, $b) {
         $priorityA = $a['is_print'] ? 1 : ($a['is_video'] ? 2 : 3);
@@ -769,7 +884,7 @@ function collectSessionMedia($dirPath, $baseId, $app_base_url, $folderName) {
 }
 
 // ============================================================================
-// 5. PENCOCOKAN DENGAN SELURUH FOTO DI SERVER (GLOBAL MATCHING)
+// 5. PENCOCOKAN DENGAN FOTO (MATCHING ENGINE)
 // ============================================================================
 $results = [];
 
@@ -820,11 +935,13 @@ usort($results, function($a, $b) {
 
 $bestMatch = $results[0] ?? null;
 
-// Ambang Batas Akurat Berbasis Deteksi Wajah, Jumlah Orang, & Pose Detail:
-// 1. High Confidence: >= 60% (Pasti Cocok)
-// 2. Medium Confidence: >= 48% (Kandidat Terpilih)
+// Ambang Batas Akurasi:
+// Jika scoped per-event: threshold 45.0% (pencarian terarah dalam 1 event khusus)
+// Jika global multi-event: threshold 48.0% (mencegah false positive antar-acara)
+$minConfidenceScore = ($matched_scoped_dir !== null) ? 45.0 : 48.0;
+
 $isHighMatch = ($bestMatch && $bestMatch['score'] >= 60.0);
-$isPossibleMatch = ($bestMatch && $bestMatch['score'] >= 48.0);
+$isPossibleMatch = ($bestMatch && $bestMatch['score'] >= $minConfidenceScore);
 
 // Sertakan file media lengkap HANYA untuk sesi ini (Eksklusif: Privasi 100% terjaga)
 if ($bestMatch && ($isHighMatch || $isPossibleMatch)) {
@@ -846,6 +963,7 @@ echo json_encode([
     'best_match' => $bestMatch,
     'highest_score' => $bestMatch ? $bestMatch['score'] : 0,
     'top_candidates' => [],
+    'scoped_event' => $matched_scoped_dir,
     'total_events_searched' => count($all_events),
     'total_photos_searched' => $total_photos_count
 ]);
